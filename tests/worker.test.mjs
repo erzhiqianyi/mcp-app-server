@@ -30,7 +30,7 @@ async function grant(mf, cookie, scopes) {
   return { ...issued, client_id: client.client_id };
 }
 
-void test('gateway: discovery, cookie-session consent, scoped tools and tenant isolation with no Firebase', async (t) => {
+void test('worker: discovery, cookie-session consent, scoped tools and tenant isolation with no Firebase', async (t) => {
   const mf = await host(t);
   const meta = await json(await mf.dispatchFetch(origin + '/.well-known/oauth-authorization-server'));
   assert.equal(meta.registration_endpoint, origin + '/api/notes/oauth/register');

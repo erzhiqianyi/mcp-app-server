@@ -2,11 +2,11 @@
 
 [中文](./integration.zh-CN.md)
 
-Two audiences: **host apps** that mount the gateway (section 1), and **agent clients** that connect to a host once it is deployed (section 2).
+Two audiences: **host apps** that mount the server (section 1), and **agent clients** that connect to a host once it is deployed (section 2).
 
-## 1. Mounting the gateway in your app
+## 1. Mounting the server in your app
 
-The gateway is a single `fetch(Request) → Response | null` function plus a SQLite-shaped storage interface, so it runs anywhere Web-standard `Request`/`Response` exist. Mount it **before** your own routing and let it claim its paths:
+The server is a single `fetch(Request) → Response | null` function plus a storage interface (`AppServerStore`) with no database dependency, so it runs anywhere Web-standard `Request`/`Response` exist. Mount it **before** your own routing and let it claim its paths:
 
 - `/.well-known/oauth-protected-resource[<mcpPath>]`, `/.well-known/oauth-authorization-server`
 - `<basePath>/mcp`, `<basePath>/mcp/schema`
@@ -16,14 +16,14 @@ Everything else returns `null` and falls through to you.
 
 ### Cloudflare Workers + D1
 
-D1 satisfies `SqlDatabase` directly. Complete host: [`examples/cloudflare-worker/worker.ts`](../examples/cloudflare-worker/worker.ts).
+Wrap the D1 binding with `sqlStore` from `@erzhiqian/mcp-app-server/sql`. Complete host: [`examples/cloudflare-worker/worker.ts`](../examples/cloudflare-worker/worker.ts).
 
 ```ts
 export default {
   async fetch(request, env) {
-    const gateway = createGateway(env);      // createAgentGateway({ …, storage: env.DB })
-    await gateway.ensureSchema();
-    return (await gateway.fetch(request)) ?? app(request, env);
+    const mcp = createMcpAppServerFor(env);      // createMcpAppServer({ …, storage: sqlStore(env.DB) })
+    await mcp.ensureSchema();
+    return (await mcp.fetch(request)) ?? app(request, env);
   },
 };
 ```
@@ -45,9 +45,9 @@ Keep `publicOrigin` stable: it is the token audience, so changing it invalidates
 import { Hono } from 'hono';
 const app = new Hono<{ Bindings: Env }>();
 app.use('*', async (c, next) => {
-  const gateway = createGateway(c.env);
-  await gateway.ensureSchema();
-  const handled = await gateway.fetch(c.req.raw);
+  const mcp = createMcpAppServerFor(c.env);
+  await mcp.ensureSchema();
+  const handled = await mcp.fetch(c.req.raw);
   return handled ?? next();
 });
 ```
@@ -58,7 +58,7 @@ No native module needed on Node ≥ 22.5. The adapter below is exercised by `tes
 
 ```ts
 import { DatabaseSync } from 'node:sqlite';
-import type { SqlDatabase } from '@erzhiqian/agent-gateway';
+import { sqlStore, type SqlDatabase } from '@erzhiqian/mcp-app-server/sql';
 
 export function nodeSqlite(db: DatabaseSync): SqlDatabase {
   const wrap = (sql: string, values: unknown[] = []) => ({
@@ -71,7 +71,11 @@ export function nodeSqlite(db: DatabaseSync): SqlDatabase {
 }
 ```
 
-`better-sqlite3`, `libsql` and `sql.js` wrap the same way: the gateway only uses `?1 … ?n` positional placeholders, `first()`, `all()` and `run().meta.changes`.
+Then `storage: sqlStore(nodeSqlite(db))`. `better-sqlite3`, `libsql` and `sql.js` wrap the same way: the adapter only uses `?1 … ?n` positional placeholders, `first()`, `all()` and `run().meta.changes`.
+
+### Any other database
+
+Implement `AppServerStore` directly — four small repositories over plain records, no SQL involved. `memoryStore()` in `src/store.ts` is the reference; `tests/memory-store.test.mjs` verifies the atomic `codes.consume` / `refreshTokens.revoke` rules any implementation must keep. For a quick start or a single-process server, `storage: memoryStore()` needs nothing at all.
 
 Serve with any Web-standard server (`@hono/node-server`, `srvx`, Node 22's `http` + `Request` conversion, Bun.serve, Deno.serve).
 
@@ -81,19 +85,19 @@ Route handlers receive Web `Request`s, so two catch-all routes are enough:
 
 ```ts
 // app/api/notes/[...path]/route.ts  and  app/.well-known/[...path]/route.ts
-import { gateway } from '@/lib/agent-gateway';
-const handle = async (request: Request) => (await gateway.fetch(request)) ?? new Response('Not found', { status: 404 });
+import { mcp } from '@/lib/mcp-app-server';
+const handle = async (request: Request) => (await mcp.fetch(request)) ?? new Response('Not found', { status: 404 });
 export { handle as GET, handle as POST };
 ```
 
-The consent page is an ordinary client component at `consentPath` (default `/oauth/authorize`) using `useAgentConsent` — see [`examples/consent-page.tsx`](../examples/consent-page.tsx). Storage on Vercel/Node can be `node:sqlite`, libsql/Turso, or D1 via the Cloudflare adapter.
+The consent page is an ordinary client component at `consentPath` (default `/oauth/authorize`) using `useAgentConsent` — see [`examples/consent-page.tsx`](../examples/consent-page.tsx). Storage on Vercel/Node can be `sqlStore` over `node:sqlite` or libsql/Turso, or your own `AppServerStore` over Postgres / Redis / KV.
 
 ### Accepting agent tokens on your existing API
 
 Tools are often thin wrappers over REST endpoints you already have. Let those endpoints accept agent tokens next to your normal session:
 
 ```ts
-const grant = await gateway.authenticate(request);   // null when the request carries no agt_ token
+const grant = await mcp.authenticate(request);   // null when the request carries no agt_ token
 const user = grant ? { id: grant.ownerId, scopes: grant.scopes, agent: grant.clientName } : await sessionUser(request);
 ```
 
@@ -102,8 +106,8 @@ Then inside a tool, forward the caller's `Authorization` header: `fetch(origin +
 ### Grant management UI
 
 ```ts
-GET  /settings/agents      → gateway.listGrants(user.id)            // name, scopes, createdAt, lastUsedAt, expiresAt
-POST /settings/agents/:id/revoke → gateway.revokeGrant(user.id, id) // 404 when the grant is not the user's
+GET  /settings/agents      → mcp.listGrants(user.id)            // name, scopes, createdAt, lastUsedAt, expiresAt
+POST /settings/agents/:id/revoke → mcp.revokeGrant(user.id, id) // 404 when the grant is not the user's
 ```
 
 ### Auditing
@@ -194,7 +198,7 @@ console.log(await client.listTools());
 console.log(await client.callTool({ name: 'notes_list', arguments: {} }));
 ```
 
-The SDK's `OAuthClientProvider` interface (`@modelcontextprotocol/sdk/client/auth.js`) handles discovery, dynamic registration and PKCE; you supply persistence and the browser hop. The gateway's end-to-end test drives the same flow with raw `fetch` in ~30 lines if you want a reference without the SDK: [`tests/gateway.test.mjs`](../tests/gateway.test.mjs).
+The SDK's `OAuthClientProvider` interface (`@modelcontextprotocol/sdk/client/auth.js`) handles discovery, dynamic registration and PKCE; you supply persistence and the browser hop. The server's end-to-end test drives the same flow with raw `fetch` in ~30 lines if you want a reference without the SDK: [`tests/worker.test.mjs`](../tests/worker.test.mjs).
 
 ### Raw HTTP walkthrough
 
@@ -215,7 +219,7 @@ curl -s -X POST $BASE/mcp -H "authorization: Bearer agt_…" -H 'content-type: a
 
 ```ts
 // e.g. GET /api/notes/server.json in your app
-return Response.json(gateway.serverJson(request, 'io.github.<github-user>', 'Your notes, readable by any MCP agent.'));
+return Response.json(mcp.serverJson(request, 'io.github.<github-user>', 'Your notes, readable by any MCP agent.'));
 ```
 
 Save it as `server.json`, then:
@@ -225,7 +229,7 @@ mcp-publisher login github
 mcp-publisher publish
 ```
 
-The registry verifies the `io.github.<user>` namespace through GitHub login and reads the server metadata from the anonymous `initialize` / `tools/list` that this gateway already allows.
+The registry verifies the `io.github.<user>` namespace through GitHub login and reads the server metadata from the anonymous `initialize` / `tools/list` that this server already allows.
 
 ## 3. Checklist before going public
 

@@ -1,5 +1,5 @@
 {
-  "name": "notes-agent-gateway",
+  "name": "notes-mcp-app-server",
   "main": "worker.ts",
   "compatibility_date": "2026-05-22",
   "vars": { "PUBLIC_ORIGIN": "https://notes.example.com" },

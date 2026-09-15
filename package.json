@@ -1,29 +1,31 @@
 {
-  "name": "@erzhiqian/agent-gateway",
+  "name": "@erzhiqian/mcp-app-server",
   "version": "0.1.0",
-  "description": "Expose an existing app's users and data to external AI agents over standard MCP + OAuth 2.1. Bring your own identity, tools and SQLite.",
+  "description": "Turn your existing app into an OAuth 2.1-protected MCP server. Bring your own identity, tools and storage; users connect Claude, ChatGPT, Cursor or any MCP client to their own data.",
   "keywords": [
     "mcp",
     "model-context-protocol",
+    "mcp-server",
     "oauth",
     "oauth2",
     "oauth2.1",
     "pkce",
-    "cloudflare-workers",
-    "d1",
     "ai-agent",
     "claude",
-    "chatgpt"
+    "chatgpt",
+    "cursor",
+    "cloudflare-workers",
+    "storage-agnostic"
   ],
   "license": "MIT",
   "author": "erzhiqianyi",
-  "homepage": "https://github.com/erzhiqianyi/agent-gateway#readme",
+  "homepage": "https://github.com/erzhiqianyi/mcp-app-server#readme",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/erzhiqianyi/agent-gateway.git"
+    "url": "git+https://github.com/erzhiqianyi/mcp-app-server.git"
   },
   "bugs": {
-    "url": "https://github.com/erzhiqianyi/agent-gateway/issues"
+    "url": "https://github.com/erzhiqianyi/mcp-app-server/issues"
   },
   "type": "module",
   "sideEffects": false,
@@ -36,6 +38,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./sql": {
+      "types": "./dist/sql.d.ts",
+      "default": "./dist/sql.js"
     },
     "./react": {
       "types": "./dist/react.d.ts",

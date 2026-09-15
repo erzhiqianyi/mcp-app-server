@@ -1,11 +1,11 @@
 // Ready-made IdentityProviders. Each answers one question on the consent page: who is signed in?
 import type { Identity, IdentityProvider } from './types.js';
-import { GatewayError } from './types.js';
+import { AppServerError } from './types.js';
 
 function bearer(request: Request) {
   const header = request.headers.get('authorization') || '';
   const token = header.replace(/^Bearer\s+/i, '').trim();
-  if (!header.startsWith('Bearer ') || !token) throw new GatewayError(401, 'Sign in first');
+  if (!header.startsWith('Bearer ') || !token) throw new AppServerError(401, 'Sign in first');
   return token;
 }
 
@@ -17,7 +17,7 @@ export interface JwtIdentityOptions {
   /** Claim that carries the stable user id. Default `sub`. */
   subjectClaim?: string;
   algorithms?: string[];
-  /** Extra checks on the verified payload; throw GatewayError to reject. */
+  /** Extra checks on the verified payload; throw AppServerError to reject. */
   assert?: (payload: Record<string, unknown>) => void;
 }
 
@@ -36,11 +36,11 @@ export function jwtIdentity(options: JwtIdentityOptions): IdentityProvider {
       try {
         payload = (await jose.jwtVerify(token, keys as Parameters<typeof jose.jwtVerify>[1], { issuer: options.issuer, audience: options.audience, algorithms: options.algorithms ?? ['RS256'] })).payload;
       } catch {
-        throw new GatewayError(401, 'Sign-in expired; sign in again');
+        throw new AppServerError(401, 'Sign-in expired; sign in again');
       }
       options.assert?.(payload);
       const id = payload[options.subjectClaim ?? 'sub'];
-      if (typeof id !== 'string' || !id) throw new GatewayError(401, 'Token missing subject');
+      if (typeof id !== 'string' || !id) throw new AppServerError(401, 'Token missing subject');
       return { id, email: typeof payload.email === 'string' ? payload.email : undefined, displayName: typeof payload.name === 'string' ? payload.name : undefined };
     },
   };
@@ -64,7 +64,7 @@ export function sessionIdentity(lookup: (request: Request) => Promise<Identity |
   return {
     async resolve(request) {
       const identity = await lookup(request);
-      if (!identity) throw new GatewayError(401, 'Sign in first');
+      if (!identity) throw new AppServerError(401, 'Sign in first');
       return identity;
     },
   };

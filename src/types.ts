@@ -1,19 +1,6 @@
 import type { ZodRawShape } from 'zod';
-
-/**
- * Minimal SQL surface the gateway needs. Cloudflare D1 satisfies it directly;
- * other SQLite-compatible drivers can be adapted with a thin wrapper.
- */
-export interface SqlDatabase {
-  exec(sql: string): Promise<unknown>;
-  prepare(sql: string): SqlStatement;
-}
-export interface SqlStatement {
-  bind(...values: unknown[]): SqlStatement;
-  first<T = Record<string, unknown>>(): Promise<T | null>;
-  all<T = Record<string, unknown>>(): Promise<{ results?: T[] }>;
-  run(): Promise<{ meta: { changes?: number } }>;
-}
+import type { AppServerStore } from './store.js';
+import type { RateLimitConfig } from './rate-limit.js';
 
 /** The user the host app recognizes on the consent page. `id` must be stable and never reused. */
 export interface Identity {
@@ -23,9 +10,9 @@ export interface Identity {
 }
 
 /**
- * The only contract between the host app and the gateway: given the consent-page request
+ * The only contract between the host app and the server: given the consent-page request
  * (whatever credential the host's own login puts on it), say who the current user is.
- * Throw `GatewayError(401, …)` when nobody is signed in.
+ * Throw `AppServerError(401, …)` when nobody is signed in.
  */
 export interface IdentityProvider {
   resolve(request: Request): Promise<Identity>;
@@ -74,13 +61,13 @@ export interface AgentTool {
 }
 
 export interface Origins {
-  /** Where agents reach the gateway; written into metadata, `resource` and token audience. */
+  /** Where agents reach the server; written into metadata, `resource` and token audience. */
   publicOrigin: string;
   /** Where the consent page lives (may differ from publicOrigin during local development). */
   webOrigin: string;
 }
 
-export type GatewayEvent =
+export type AppServerEvent =
   | { type: 'authorized' | 'refreshed' | 'revoked'; ownerId: string; grantId: string; clientId: string; clientName: string; scopes?: string[] }
   | { type: 'tool'; ownerId: string; grantId: string; clientId: string; clientName: string; tool: string; ok: boolean };
 
@@ -108,19 +95,28 @@ export interface AuthenticatedGrant {
   audience: string;
 }
 
-export interface GatewayConfig {
+export interface McpAppServerConfig {
   /** MCP server name; also used in server.json. */
   name: string;
   version?: string;
-  /** All gateway routes hang here: `<basePath>/mcp`, `<basePath>/mcp/schema`, `<basePath>/oauth/*`. */
+  /** All server routes hang here: `<basePath>/mcp`, `<basePath>/mcp/schema`, `<basePath>/oauth/*`. */
   basePath: string;
   /** Path on `webOrigin` that renders the consent page. Default `/oauth/authorize`. */
   consentPath?: string;
-  /** Ordered scope catalogue. Order is preserved in metadata and on the consent page. */
-  scopes: Record<string, ScopeDefinition>;
+  /**
+   * Ordered scope catalogue; order is preserved in metadata and on the consent page. Optional:
+   * omit it when your app has no notion of delegated scopes — the server then uses one implicit
+   * required scope named after the server, the consent page is a plain allow/deny, and every
+   * tool is visible to every authorized agent. Authorization stays entirely in your handlers.
+   */
+  scopes?: Record<string, ScopeDefinition>;
   identity: IdentityProvider;
   tools: readonly AgentTool[];
-  storage: SqlDatabase;
+  /**
+   * Where clients, codes and tokens live. Implement `AppServerStore` over your own database, or use
+   * `memoryStore()` (dev/tests) or `sqlStore()` from `@erzhiqian/mcp-app-server/sql` (D1, SQLite).
+   */
+  storage: AppServerStore;
   /** Static origins or derived per request (e.g. from Host + env). */
   origins: Origins | ((request: Request) => Origins);
   /** Access token lifetime in days (default 30) and refresh token lifetime (default 90). */
@@ -128,24 +124,21 @@ export interface GatewayConfig {
   refreshTokenDays?: number;
   /** Prefix for issued access tokens; lets the host recognize them on its own routes. Default `agt_`. */
   tokenPrefix?: string;
-  /** Table names; override only when adopting an existing schema. */
-  tables?: Partial<TableNames>;
+  /**
+   * Rate limit for `POST <base>/oauth/register`, the one unauthenticated endpoint that writes.
+   * Default: `memoryRateLimiter()` (20 per hour per IP, per process). Pass your platform's shared
+   * counter on multi-instance runtimes, or `false` to disable.
+   */
+  registrationLimit?: RateLimitConfig | false;
   /** Audit hook. Never receives tool payloads. */
-  onEvent?: (event: GatewayEvent) => Promise<void> | void;
+  onEvent?: (event: AppServerEvent) => Promise<void> | void;
   /** Let `initialize` / `tools/list` answer without a token so registries can inspect the server. Default true. */
   anonymousDiscovery?: boolean;
   /** Optional free-text contract (markdown) published with the schema and via a `*_get_contract`-style tool if the host wants one. */
   contract?: string;
 }
 
-export interface TableNames {
-  clients: string;
-  codes: string;
-  refreshTokens: string;
-  accessTokens: string;
-}
-
-export class GatewayError extends Error {
+export class AppServerError extends Error {
   constructor(
     public status: number,
     message: string,
@@ -153,6 +146,6 @@ export class GatewayError extends Error {
     public code: string = status === 401 ? 'invalid_token' : 'invalid_request',
   ) {
     super(message);
-    this.name = 'GatewayError';
+    this.name = 'AppServerError';
   }
 }

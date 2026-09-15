@@ -1,7 +1,8 @@
-// Minimal host app for the gateway tests: a cookie session, one table of notes, two tools.
+// Minimal host app for the server tests: a cookie session, one table of notes, two tools.
 // Any host app takes this shape: your login, your tables, your tools.
 import { z } from 'zod';
-import { createAgentGateway, sessionIdentity, type SqlDatabase } from '../../src/index.js';
+import { createMcpAppServer, sessionIdentity } from '../../src/index.js';
+import { sqlStore, type SqlDatabase } from '../../src/sql.js';
 
 type Env = { NOTES_DB: SqlDatabase };
 
@@ -9,7 +10,7 @@ export default {
   async fetch(request: Request, env: Env) {
     const db = env.NOTES_DB;
     await db.exec('CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, owner TEXT NOT NULL, text TEXT NOT NULL, summary TEXT);');
-    const gateway = createAgentGateway({
+    const mcp = createMcpAppServer({
       name: 'notes',
       basePath: '/api/notes',
       scopes: {
@@ -21,7 +22,7 @@ export default {
         const match = /session=([a-z0-9]+)/.exec(req.headers.get('cookie') || '');
         return match ? { id: 'user-' + match[1] } : null;
       }),
-      storage: db,
+      storage: sqlStore(db),
       origins: { publicOrigin: 'http://notes.local', webOrigin: 'http://notes.local' },
       tools: [
         {
@@ -48,8 +49,8 @@ export default {
         },
       ],
     });
-    await gateway.ensureSchema();
-    const handled = await gateway.fetch(request);
+    await mcp.ensureSchema();
+    const handled = await mcp.fetch(request);
     if (handled) return handled;
     // Host route used by the test to seed data.
     if (new URL(request.url).pathname === '/seed' && request.method === 'POST') {

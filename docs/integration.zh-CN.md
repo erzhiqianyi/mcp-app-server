@@ -2,11 +2,11 @@
 
 [English](./integration.md)
 
-两类读者：**宿主应用**把网关挂进来（第 1 节）；**Agent 客户端**在宿主上线后连接（第 2 节）。
+两类读者：**宿主应用**把本包挂进来（第 1 节）；**Agent 客户端**在宿主上线后连接（第 2 节）。
 
-## 1. 在你的应用里挂载网关
+## 1. 在你的应用里挂载本包
 
-网关就是一个 `fetch(Request) → Response | null` 函数加一个 SQLite 形状的存储接口，任何有 Web 标准 `Request`/`Response` 的运行时都能跑。把它挂在你自己的路由**之前**，让它认领这些路径：
+本包就是一个 `fetch(Request) → Response | null` 函数加一个不绑定数据库的存储接口（`AppServerStore`），任何有 Web 标准 `Request`/`Response` 的运行时都能跑。把它挂在你自己的路由**之前**，让它认领这些路径：
 
 - `/.well-known/oauth-protected-resource[<mcpPath>]`、`/.well-known/oauth-authorization-server`
 - `<basePath>/mcp`、`<basePath>/mcp/schema`
@@ -16,14 +16,14 @@
 
 ### Cloudflare Workers + D1
 
-D1 直接满足 `SqlDatabase`。完整宿主见 [`examples/cloudflare-worker/worker.ts`](../examples/cloudflare-worker/worker.ts)。
+用 `@erzhiqian/mcp-app-server/sql` 的 `sqlStore` 包一下 D1 绑定即可。完整宿主见 [`examples/cloudflare-worker/worker.ts`](../examples/cloudflare-worker/worker.ts)。
 
 ```ts
 export default {
   async fetch(request, env) {
-    const gateway = createGateway(env);      // createAgentGateway({ …, storage: env.DB })
-    await gateway.ensureSchema();
-    return (await gateway.fetch(request)) ?? app(request, env);
+    const mcp = createMcpAppServerFor(env);      // createMcpAppServer({ …, storage: sqlStore(env.DB) })
+    await mcp.ensureSchema();
+    return (await mcp.fetch(request)) ?? app(request, env);
   },
 };
 ```
@@ -45,9 +45,9 @@ origins: (request) => {
 import { Hono } from 'hono';
 const app = new Hono<{ Bindings: Env }>();
 app.use('*', async (c, next) => {
-  const gateway = createGateway(c.env);
-  await gateway.ensureSchema();
-  const handled = await gateway.fetch(c.req.raw);
+  const mcp = createMcpAppServerFor(c.env);
+  await mcp.ensureSchema();
+  const handled = await mcp.fetch(c.req.raw);
   return handled ?? next();
 });
 ```
@@ -58,7 +58,7 @@ Node ≥ 22.5 不需要任何原生模块。下面的适配器就是 `tests/node
 
 ```ts
 import { DatabaseSync } from 'node:sqlite';
-import type { SqlDatabase } from '@erzhiqian/agent-gateway';
+import { sqlStore, type SqlDatabase } from '@erzhiqian/mcp-app-server/sql';
 
 export function nodeSqlite(db: DatabaseSync): SqlDatabase {
   const wrap = (sql: string, values: unknown[] = []) => ({
@@ -71,7 +71,11 @@ export function nodeSqlite(db: DatabaseSync): SqlDatabase {
 }
 ```
 
-`better-sqlite3`、`libsql`、`sql.js` 同样包法：网关只用 `?1 … ?n` 位置占位符、`first()`、`all()` 和 `run().meta.changes`。
+然后 `storage: sqlStore(nodeSqlite(db))`。`better-sqlite3`、`libsql`、`sql.js` 同样包法：适配器只用 `?1 … ?n` 位置占位符、`first()`、`all()` 和 `run().meta.changes`。
+
+### 其他任意数据库
+
+直接实现 `AppServerStore`——四个小仓储、普通对象记录，不涉及 SQL。`src/store.ts` 里的 `memoryStore()` 是参考实现；`tests/memory-store.test.mjs` 验证任何实现都必须保持的原子 `codes.consume` / `refreshTokens.revoke` 规则。快速试用或单进程服务，`storage: memoryStore()` 什么都不需要。
 
 HTTP 层用任何 Web 标准服务器都行（`@hono/node-server`、`srvx`、Bun.serve、Deno.serve）。
 
@@ -81,19 +85,19 @@ Route handler 收到的就是 Web `Request`，两个 catch-all 路由即可：
 
 ```ts
 // app/api/notes/[...path]/route.ts  以及  app/.well-known/[...path]/route.ts
-import { gateway } from '@/lib/agent-gateway';
-const handle = async (request: Request) => (await gateway.fetch(request)) ?? new Response('Not found', { status: 404 });
+import { mcp } from '@/lib/mcp-app-server';
+const handle = async (request: Request) => (await mcp.fetch(request)) ?? new Response('Not found', { status: 404 });
 export { handle as GET, handle as POST };
 ```
 
-同意页是挂在 `consentPath`（默认 `/oauth/authorize`）上的普通客户端组件，用 `useAgentConsent`——见 [`examples/consent-page.tsx`](../examples/consent-page.tsx)。Vercel/Node 上的存储可以是 `node:sqlite`、libsql/Turso，或通过 Cloudflare 适配器用 D1。
+同意页是挂在 `consentPath`（默认 `/oauth/authorize`）上的普通客户端组件，用 `useAgentConsent`——见 [`examples/consent-page.tsx`](../examples/consent-page.tsx)。Vercel/Node 上的存储可以是 `sqlStore` 套 `node:sqlite` 或 libsql/Turso，也可以是你自己基于 Postgres / Redis / KV 实现的 `AppServerStore`。
 
 ### 让已有 API 接受 Agent token
 
 工具往往只是你已有 REST 端点的薄包装。让这些端点在普通 session 之外也接受 Agent token：
 
 ```ts
-const grant = await gateway.authenticate(request);   // 请求没带 agt_ token 时为 null
+const grant = await mcp.authenticate(request);   // 请求没带 agt_ token 时为 null
 const user = grant ? { id: grant.ownerId, scopes: grant.scopes, agent: grant.clientName } : await sessionUser(request);
 ```
 
@@ -102,8 +106,8 @@ const user = grant ? { id: grant.ownerId, scopes: grant.scopes, agent: grant.cli
 ### 授权管理界面
 
 ```ts
-GET  /settings/agents      → gateway.listGrants(user.id)            // name、scopes、createdAt、lastUsedAt、expiresAt
-POST /settings/agents/:id/revoke → gateway.revokeGrant(user.id, id) // 不是该用户的授权 → 404
+GET  /settings/agents      → mcp.listGrants(user.id)            // name、scopes、createdAt、lastUsedAt、expiresAt
+POST /settings/agents/:id/revoke → mcp.revokeGrant(user.id, id) // 不是该用户的授权 → 404
 ```
 
 ### 审计
@@ -194,7 +198,7 @@ console.log(await client.listTools());
 console.log(await client.callTool({ name: 'notes_list', arguments: {} }));
 ```
 
-SDK 的 `OAuthClientProvider`（`@modelcontextprotocol/sdk/client/auth.js`）负责发现、动态注册和 PKCE，你只提供持久化和浏览器跳转。不想依赖 SDK 的话，网关的端到端测试用裸 `fetch` 三十来行走完了同一流程：[`tests/gateway.test.mjs`](../tests/gateway.test.mjs)。
+SDK 的 `OAuthClientProvider`（`@modelcontextprotocol/sdk/client/auth.js`）负责发现、动态注册和 PKCE，你只提供持久化和浏览器跳转。不想依赖 SDK 的话，本包的端到端测试用裸 `fetch` 三十来行走完了同一流程：[`tests/worker.test.mjs`](../tests/worker.test.mjs)。
 
 ### 裸 HTTP 走一遍
 
@@ -215,7 +219,7 @@ curl -s -X POST $BASE/mcp -H "authorization: Bearer agt_…" -H 'content-type: a
 
 ```ts
 // 例如在你的应用里提供 GET /api/notes/server.json
-return Response.json(gateway.serverJson(request, 'io.github.<github用户名>', '一句话描述'));
+return Response.json(mcp.serverJson(request, 'io.github.<github用户名>', '一句话描述'));
 ```
 
 存为 `server.json`，然后：
@@ -225,7 +229,7 @@ mcp-publisher login github
 mcp-publisher publish
 ```
 
-Registry 通过 GitHub 登录验证 `io.github.<user>` 命名空间，并从网关已允许的匿名 `initialize` / `tools/list` 读取服务器元数据。
+Registry 通过 GitHub 登录验证 `io.github.<user>` 命名空间，并从本包已允许的匿名 `initialize` / `tools/list` 读取服务器元数据。
 
 ## 3. 公开前检查清单
 

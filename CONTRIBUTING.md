@@ -5,14 +5,14 @@ Thanks for helping. Issues and pull requests are welcome.
 ## Setup
 
 ```bash
-git clone https://github.com/erzhiqianyi/agent-gateway.git
-cd agent-gateway
+git clone https://github.com/erzhiqianyi/mcp-app-server.git
+cd mcp-app-server
 npm install
 npm run typecheck
 npm test
 ```
 
-`npm test` builds `dist/` first, then runs two suites: a Miniflare end-to-end flow against a Cloudflare Worker host (`tests/gateway.test.mjs`) and the same package on plain Node with `node:sqlite` (`tests/node-sqlite.test.mjs`). Node ≥ 22 is required.
+`npm test` builds `dist/` first, then runs three suites: a Miniflare end-to-end flow against a Cloudflare Worker host with D1 (`tests/worker.test.mjs`), the replay/revocation rules on `memoryStore()` with no database (`tests/memory-store.test.mjs`), and the `sqlStore` adapter on plain Node with `node:sqlite` (`tests/node-sqlite.test.mjs`). Node ≥ 22 is required.
 
 ## Pull requests
 

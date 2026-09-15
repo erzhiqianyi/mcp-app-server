@@ -13,7 +13,7 @@ export interface ConsentClient {
 }
 
 export interface UseAgentConsentOptions {
-  /** Same `basePath` the gateway was created with. */
+  /** Same `basePath` the server was created with. */
   basePath: string;
   /** Headers proving who is signed in (e.g. `Authorization: Bearer <host JWT>`); read at approve time. */
   authHeaders?: () => Promise<Record<string, string>> | Record<string, string>;

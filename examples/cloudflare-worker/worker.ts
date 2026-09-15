@@ -1,7 +1,8 @@
 // A complete host: Cloudflare Worker + D1, a cookie session, one table of notes, two tools.
 // Deploy with `wrangler deploy`, then connect any MCP client to https://<your-domain>/api/notes/mcp.
 import { z } from 'zod';
-import { createAgentGateway, sessionIdentity, type SqlDatabase } from '@erzhiqian/agent-gateway';
+import { createMcpAppServer, sessionIdentity } from '@erzhiqian/mcp-app-server';
+import { sqlStore, type SqlDatabase } from '@erzhiqian/mcp-app-server/sql';
 
 type Env = { NOTES_DB: SqlDatabase; PUBLIC_ORIGIN: string };
 
@@ -10,7 +11,7 @@ export default {
     const db = env.NOTES_DB;
     await db.exec('CREATE TABLE IF NOT EXISTS notes (id TEXT PRIMARY KEY, owner TEXT NOT NULL, text TEXT NOT NULL, summary TEXT);');
 
-    const gateway = createAgentGateway({
+    const mcp = createMcpAppServer({
       name: 'notes',
       basePath: '/api/notes',
       consentPath: '/oauth/authorize',
@@ -23,7 +24,7 @@ export default {
         const match = /session=([a-z0-9]+)/.exec(req.headers.get('cookie') || '');
         return match ? { id: 'user-' + match[1] } : null;
       }),
-      storage: db,
+      storage: sqlStore(db),
       origins: { publicOrigin: env.PUBLIC_ORIGIN, webOrigin: env.PUBLIC_ORIGIN },
       onEvent: (event) => console.log(JSON.stringify(event)),
       tools: [
@@ -52,12 +53,12 @@ export default {
       ],
     });
 
-    await gateway.ensureSchema();
-    const handled = await gateway.fetch(request);
+    await mcp.ensureSchema();
+    const handled = await mcp.fetch(request);
     if (handled) return handled;
 
     // Everything below is your existing app. Agent tokens are also accepted on your own routes:
-    const grant = await gateway.authenticate(request);
+    const grant = await mcp.authenticate(request);
     if (grant) return new Response(`agent ${grant.clientName} acting for ${grant.ownerId}`);
     return new Response('not found', { status: 404 });
   },
