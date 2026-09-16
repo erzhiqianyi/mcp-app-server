@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Added
+- Japanese README and guides (`README.ja.md`, `docs/*.ja.md`).
+
 ## [0.1.0] - 2026-09-15
 
 Initial release. Extracted from the Career Note monorepo (where it was briefly named `agent-gateway`) and generalised.
