@@ -1,4 +1,4 @@
-# @erzhiqian/mcp-app-server
+# @ninomae/mcp-app-server
 
 **把你已有的应用变成一个带 OAuth 2.1 授权的 MCP server。**
 
@@ -15,7 +15,7 @@
 ## 安装
 
 ```bash
-npm install @erzhiqian/mcp-app-server @modelcontextprotocol/sdk zod
+npm install @ninomae/mcp-app-server @modelcontextprotocol/sdk zod
 ```
 
 可选 peer：`jose`（用 `jwtIdentity` / `firebaseIdentity` 时需要）、`react`（用 `/react` 同意页 hook 时需要）。Node ≥ 22 或任何 Web 标准运行时（Cloudflare Workers、Deno、Bun）。
@@ -36,7 +36,7 @@ scopes: {
 ### 2. 实现身份
 
 ```ts
-import { sessionIdentity, jwtIdentity, firebaseIdentity, fixedIdentity } from '@erzhiqian/mcp-app-server';
+import { sessionIdentity, jwtIdentity, firebaseIdentity, fixedIdentity } from '@ninomae/mcp-app-server';
 
 // 服务端 session（NextAuth、Rails、Django、Laravel、自研 cookie）
 identity: sessionIdentity(async (req) => await mySessions.userFromCookie(req))   // 返回 { id } 或 null
@@ -83,8 +83,8 @@ tools: [
 ### 4. 创建 server 并挂路由
 
 ```ts
-import { createMcpAppServer } from '@erzhiqian/mcp-app-server';
-import { sqlStore } from '@erzhiqian/mcp-app-server/sql';
+import { createMcpAppServer } from '@ninomae/mcp-app-server';
+import { sqlStore } from '@ninomae/mcp-app-server/sql';
 
 const mcp = createMcpAppServer({
   name: 'notes',
@@ -119,7 +119,7 @@ interface AppServerStore {
 }
 ```
 
-自带两个实现：`memoryStore()`（Map，开发/测试/单进程）和 `@erzhiqian/mcp-app-server/sql` 里的 `sqlStore(db, tables?)`（D1 直接传，node:sqlite / better-sqlite3 / libsql 包十行适配器）。要接 Postgres、Redis、KV、Mongo、Prisma、Drizzle，就自己实现这个接口（约 150 行，[`src/store.ts`](./src/store.ts) 是参考实现）。标"原子"的两个方法是防重放的关键：`codes.consume` 和 `refreshTokens.revoke` 必须恰好对一个调用者返回 `true`。把 [`tests/memory-store.test.mjs`](./tests/memory-store.test.mjs) 复制一份、换成你的 store，就能验证。
+自带两个实现：`memoryStore()`（Map，开发/测试/单进程）和 `@ninomae/mcp-app-server/sql` 里的 `sqlStore(db, tables?)`（D1 直接传，node:sqlite / better-sqlite3 / libsql 包十行适配器）。要接 Postgres、Redis、KV、Mongo、Prisma、Drizzle，就自己实现这个接口（约 150 行，[`src/store.ts`](./src/store.ts) 是参考实现）。标"原子"的两个方法是防重放的关键：`codes.consume` 和 `refreshTokens.revoke` 必须恰好对一个调用者返回 `true`。把 [`tests/memory-store.test.mjs`](./tests/memory-store.test.mjs) 复制一份、换成你的 store，就能验证。
 
 **注册限流。** `POST /oauth/register` 无需认证但会写存储，所以有限流。和存储一样只定义契约：`registrationLimit: { limiter: { allow(key) => Promise<boolean> }, key?: (request) => string }`，`false` 关闭。默认 `memoryRateLimiter()`（每 IP 每小时 20 次，进程内计数）——单进程服务器正确，**Workers / Lambda 等多实例环境无效**，请接平台的共享计数器，例如 Cloudflare 的 rate-limiting binding：`{ limiter: { allow: async (key) => (await env.REGISTER_LIMIT.limit({ key })).success } }`。
 
@@ -130,7 +130,7 @@ interface AppServerStore {
 授权服务器会把用户 302 到 `webOrigin + consentPath`（原样带 query）。页面用你自己的登录，用 headless hook 完成其余部分：
 
 ```tsx
-import { useAgentConsent } from '@erzhiqian/mcp-app-server/react';
+import { useAgentConsent } from '@ninomae/mcp-app-server/react';
 
 const { client, chosen, toggle, decide, error, busy, destination, missingClient } = useAgentConsent({
   basePath: '/api/notes',

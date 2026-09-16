@@ -16,7 +16,7 @@
 
 ### Cloudflare Workers + D1
 
-用 `@erzhiqian/mcp-app-server/sql` 的 `sqlStore` 包一下 D1 绑定即可。完整宿主见 [`examples/cloudflare-worker/worker.ts`](../examples/cloudflare-worker/worker.ts)。
+用 `@ninomae/mcp-app-server/sql` 的 `sqlStore` 包一下 D1 绑定即可。完整宿主见 [`examples/cloudflare-worker/worker.ts`](../examples/cloudflare-worker/worker.ts)。
 
 ```ts
 export default {
@@ -58,7 +58,7 @@ Node ≥ 22.5 不需要任何原生模块。下面的适配器就是 `tests/node
 
 ```ts
 import { DatabaseSync } from 'node:sqlite';
-import { sqlStore, type SqlDatabase } from '@erzhiqian/mcp-app-server/sql';
+import { sqlStore, type SqlDatabase } from '@ninomae/mcp-app-server/sql';
 
 export function nodeSqlite(db: DatabaseSync): SqlDatabase {
   const wrap = (sql: string, values: unknown[] = []) => ({

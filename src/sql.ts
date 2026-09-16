@@ -1,6 +1,6 @@
 // Optional adapter: AppServerStore over any SQLite-flavoured SQL driver. Cloudflare D1 satisfies
 // `SqlDatabase` as-is; node:sqlite, better-sqlite3, libsql and sql.js need a ten-line wrapper
-// (see docs/integration.md). Imported from '@erzhiqian/mcp-app-server/sql'; the core never loads it.
+// (see docs/integration.md). Imported from '@ninomae/mcp-app-server/sql'; the core never loads it.
 import type { AccessTokenRecord, ClientRecord, CodeRecord, AppServerStore, RefreshTokenRecord } from './store.js';
 
 /** Minimal SQL surface the adapter needs: `?1 … ?n` placeholders, `first()`, `all()`, `run().meta.changes`. */

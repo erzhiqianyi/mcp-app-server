@@ -1,8 +1,8 @@
 // A complete host: Cloudflare Worker + D1, a cookie session, one table of notes, two tools.
 // Deploy with `wrangler deploy`, then connect any MCP client to https://<your-domain>/api/notes/mcp.
 import { z } from 'zod';
-import { createMcpAppServer, sessionIdentity } from '@erzhiqian/mcp-app-server';
-import { sqlStore, type SqlDatabase } from '@erzhiqian/mcp-app-server/sql';
+import { createMcpAppServer, sessionIdentity } from '@ninomae/mcp-app-server';
+import { sqlStore, type SqlDatabase } from '@ninomae/mcp-app-server/sql';
 
 type Env = { NOTES_DB: SqlDatabase; PUBLIC_ORIGIN: string };
 

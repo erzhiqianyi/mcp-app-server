@@ -1,7 +1,7 @@
 'use client';
 // Minimal consent page. Mount it at `consentPath` on `webOrigin` (default /oauth/authorize).
 // The server redirects the user here with the OAuth query string intact; the hook does the rest.
-import { useAgentConsent } from '@erzhiqian/mcp-app-server/react';
+import { useAgentConsent } from '@ninomae/mcp-app-server/react';
 
 export default function ConsentPage({ sessionToken }: { sessionToken: string | null }) {
   const { client, chosen, toggle, decide, error, busy, destination, missingClient } = useAgentConsent({

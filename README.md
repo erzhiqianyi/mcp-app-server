@@ -1,10 +1,10 @@
-# @erzhiqian/mcp-app-server
+# @ninomae/mcp-app-server
 
 **Turn your existing app into an OAuth 2.1-protected MCP server.**
 
-[![npm](https://img.shields.io/npm/v/@erzhiqian/mcp-app-server)](https://www.npmjs.com/package/@erzhiqian/mcp-app-server)
+[![npm](https://img.shields.io/npm/v/@ninomae/mcp-app-server)](https://www.npmjs.com/package/@ninomae/mcp-app-server)
 [![CI](https://github.com/erzhiqianyi/mcp-app-server/actions/workflows/ci.yml/badge.svg)](https://github.com/erzhiqianyi/mcp-app-server/actions/workflows/ci.yml)
-[![license](https://img.shields.io/npm/l/@erzhiqian/mcp-app-server)](./LICENSE)
+[![license](https://img.shields.io/npm/l/@ninomae/mcp-app-server)](./LICENSE)
 
 Expose **your existing app's users and data** to external AI agents (Claude, ChatGPT, Cursor, Claude Code, any MCP client) over standard **MCP + OAuth 2.1**. You do not integrate a model; users bring their own agent, read their data, work on it there, and write results back through tools you define.
 
@@ -19,7 +19,7 @@ Expose **your existing app's users and data** to external AI agents (Claude, Cha
 ## Install
 
 ```bash
-npm install @erzhiqian/mcp-app-server @modelcontextprotocol/sdk zod
+npm install @ninomae/mcp-app-server @modelcontextprotocol/sdk zod
 ```
 
 Optional peers: `jose` (for `jwtIdentity` / `firebaseIdentity`) and `react` (for the `/react` consent hook). Node ≥ 22 or any Web-standard runtime (Cloudflare Workers, Deno, Bun).
@@ -28,8 +28,8 @@ Optional peers: `jose` (for `jwtIdentity` / `firebaseIdentity`) and `react` (for
 
 ```ts
 import { z } from 'zod';
-import { createMcpAppServer, sessionIdentity } from '@erzhiqian/mcp-app-server';
-import { sqlStore } from '@erzhiqian/mcp-app-server/sql';
+import { createMcpAppServer, sessionIdentity } from '@ninomae/mcp-app-server';
+import { sqlStore } from '@ninomae/mcp-app-server/sql';
 
 const mcp = createMcpAppServer({
   name: 'notes',
@@ -118,7 +118,7 @@ Every access token is bound to `ownerId` + `clientId` + granted scopes + the aud
 The only contract between your app and the server. `id` must be stable and never reused; every token is bound to it.
 
 ```ts
-import { sessionIdentity, jwtIdentity, firebaseIdentity, fixedIdentity } from '@erzhiqian/mcp-app-server';
+import { sessionIdentity, jwtIdentity, firebaseIdentity, fixedIdentity } from '@ninomae/mcp-app-server';
 
 sessionIdentity(async (req) => await sessions.userFromCookie(req));   // server-side sessions
 jwtIdentity({ jwksUrl, issuer, audience });                             // Supabase, Auth0, Clerk, Cognito, any OIDC
@@ -146,8 +146,8 @@ interface AppServerStore {
 Two implementations ship with the package:
 
 ```ts
-import { memoryStore } from '@erzhiqian/mcp-app-server';        // Maps; dev, tests, single process
-import { sqlStore } from '@erzhiqian/mcp-app-server/sql';       // Cloudflare D1 as-is; node:sqlite / better-sqlite3 / libsql with a 10-line wrapper
+import { memoryStore } from '@ninomae/mcp-app-server';        // Maps; dev, tests, single process
+import { sqlStore } from '@ninomae/mcp-app-server/sql';       // Cloudflare D1 as-is; node:sqlite / better-sqlite3 / libsql with a 10-line wrapper
 sqlStore(env.DB, { clients: 'my_clients' })                    // optional table-name overrides
 ```
 
@@ -203,7 +203,7 @@ mcp.paths                             // { mcp, schema, oauth, consent }
 ### Consent page (React)
 
 ```tsx
-import { useAgentConsent } from '@erzhiqian/mcp-app-server/react';
+import { useAgentConsent } from '@ninomae/mcp-app-server/react';
 
 const { client, chosen, toggle, decide, error, busy, destination, missingClient } = useAgentConsent({
   basePath: '/api/notes',

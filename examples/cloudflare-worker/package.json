@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": { "dev": "wrangler dev", "deploy": "wrangler deploy" },
   "dependencies": {
-    "@erzhiqian/mcp-app-server": "^0.1.0",
+    "@ninomae/mcp-app-server": "^0.1.0",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "zod": "^4.0.0"
   },

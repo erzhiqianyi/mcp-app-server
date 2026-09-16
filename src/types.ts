@@ -114,7 +114,7 @@ export interface McpAppServerConfig {
   tools: readonly AgentTool[];
   /**
    * Where clients, codes and tokens live. Implement `AppServerStore` over your own database, or use
-   * `memoryStore()` (dev/tests) or `sqlStore()` from `@erzhiqian/mcp-app-server/sql` (D1, SQLite).
+   * `memoryStore()` (dev/tests) or `sqlStore()` from `@ninomae/mcp-app-server/sql` (D1, SQLite).
    */
   storage: AppServerStore;
   /** Static origins or derived per request (e.g. from Host + env). */

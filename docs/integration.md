@@ -16,7 +16,7 @@ Everything else returns `null` and falls through to you.
 
 ### Cloudflare Workers + D1
 
-Wrap the D1 binding with `sqlStore` from `@erzhiqian/mcp-app-server/sql`. Complete host: [`examples/cloudflare-worker/worker.ts`](../examples/cloudflare-worker/worker.ts).
+Wrap the D1 binding with `sqlStore` from `@ninomae/mcp-app-server/sql`. Complete host: [`examples/cloudflare-worker/worker.ts`](../examples/cloudflare-worker/worker.ts).
 
 ```ts
 export default {
@@ -58,7 +58,7 @@ No native module needed on Node ≥ 22.5. The adapter below is exercised by `tes
 
 ```ts
 import { DatabaseSync } from 'node:sqlite';
-import { sqlStore, type SqlDatabase } from '@erzhiqian/mcp-app-server/sql';
+import { sqlStore, type SqlDatabase } from '@ninomae/mcp-app-server/sql';
 
 export function nodeSqlite(db: DatabaseSync): SqlDatabase {
   const wrap = (sql: string, values: unknown[] = []) => ({
