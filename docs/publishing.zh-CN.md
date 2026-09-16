@@ -1,6 +1,6 @@
 # 发布到 npm
 
-[English](./publishing.md)
+[English](./publishing.md) · [日本語](./publishing.ja.md)
 
 包以 ESM + `.d.ts` 的形式从 `dist/` 发布。`npm pack` / `npm publish` 会自动构建（`prepack`），`prepublishOnly` 在类型检查或测试失败时拒绝发布。
 

@@ -2,7 +2,7 @@
 
 **把你已有的应用变成一个带 OAuth 2.1 授权的 MCP server。**
 
-[English](./README.md) · [接入指南](./docs/integration.md) · [发布流程](./docs/publishing.md) · [变更记录](./CHANGELOG.md)
+[English](./README.md) · [日本語](./README.ja.md) · [接入指南](./docs/integration.md) · [发布流程](./docs/publishing.md) · [变更记录](./CHANGELOG.md)
 
 把**你已有的用户和数据**，以标准 **MCP + OAuth 2.1** 的方式授权给外部 AI Agent（Claude、ChatGPT、Cursor、Claude Code、任何 MCP 客户端）。你不需要自己接 AI 模型：用户带着自己的 Agent 来，读你的数据、在他们那边分析、再通过写工具把结果送回你的应用。
 

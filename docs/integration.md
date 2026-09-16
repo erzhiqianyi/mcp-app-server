@@ -1,6 +1,6 @@
 # Integration guide
 
-[中文](./integration.zh-CN.md)
+[中文](./integration.zh-CN.md) · [日本語](./integration.ja.md)
 
 Two audiences: **host apps** that mount the server (section 1), and **agent clients** that connect to a host once it is deployed (section 2).
 

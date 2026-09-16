@@ -1,6 +1,6 @@
 # Publishing to npm
 
-[中文](./publishing.zh-CN.md)
+[中文](./publishing.zh-CN.md) · [日本語](./publishing.ja.md)
 
 The package ships as ESM + `.d.ts` from `dist/`. `npm pack` / `npm publish` build automatically (`prepack`), and `prepublishOnly` refuses to publish if the typecheck or the test suite fails.
 

@@ -1,6 +1,6 @@
 # 接入指南
 
-[English](./integration.md)
+[English](./integration.md) · [日本語](./integration.ja.md)
 
 两类读者：**宿主应用**把本包挂进来（第 1 节）；**Agent 客户端**在宿主上线后连接（第 2 节）。
 

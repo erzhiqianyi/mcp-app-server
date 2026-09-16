@@ -8,7 +8,7 @@
 
 Expose **your existing app's users and data** to external AI agents (Claude, ChatGPT, Cursor, Claude Code, any MCP client) over standard **MCP + OAuth 2.1**. You do not integrate a model; users bring their own agent, read their data, work on it there, and write results back through tools you define.
 
-[中文文档](./README.zh-CN.md) · [Integration guide](./docs/integration.md) · [Publishing](./docs/publishing.md) · [Changelog](./CHANGELOG.md)
+[中文文档](./README.zh-CN.md) · [日本語](./README.ja.md) · [Integration guide](./docs/integration.md) · [Publishing](./docs/publishing.md) · [Changelog](./CHANGELOG.md)
 
 - **Bring your own identity.** Your app already has a login (Firebase, Supabase, Auth0, Clerk, a session cookie, home-grown). You implement one function: `resolve(request) → { id }`.
 - **It is the OAuth authorization server.** MCP clients require dynamic client registration (RFC 7591), PKCE, resource indicators (RFC 8707), refresh-token rotation and per-agent revocation. Consumer identity providers rarely offer these, so this layer has to live in your app.
