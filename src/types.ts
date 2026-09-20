@@ -36,6 +36,9 @@ export interface ToolAnnotations {
 
 export interface ToolResult {
   content: { type: 'text'; text: string }[];
+  /** Machine-readable copy of the result; MCP Apps hosts hand it to the tool's UI resource. */
+  structuredContent?: Record<string, unknown>;
+  _meta?: Record<string, unknown>;
   isError?: boolean;
 }
 
@@ -52,12 +55,38 @@ export interface ToolContext {
 
 export interface AgentTool {
   name: string;
+  title?: string;
   /** Scope required to see and call the tool; omit for tools any authorized agent may use. */
   scope?: string;
   description: string;
   inputSchema: ZodRawShape;
   annotations: ToolAnnotations;
+  /** Passed through to `tools/list`; MCP Apps put `{ ui: { resourceUri: 'ui://…' } }` here. */
+  _meta?: Record<string, unknown>;
   handler: (args: Record<string, unknown>, ctx: ToolContext) => Promise<ToolResult>;
+}
+
+/** One content item of a `resources/read` response. */
+export type ResourceContent =
+  | { uri: string; mimeType?: string; text: string; _meta?: Record<string, unknown> }
+  | { uri: string; mimeType?: string; blob: string; _meta?: Record<string, unknown> };
+
+/**
+ * A static resource (fixed URI) the server lists and serves. MCP Apps register their HTML here
+ * under a `ui://` URI with mimeType `text/html;profile=mcp-app`, and point tools at it through
+ * `_meta.ui.resourceUri`. The reader receives the caller's context for authorization; keep the
+ * content user-independent, since hosts may cache `ui://` resources across reads.
+ */
+export interface AgentResource {
+  uri: string;
+  name: string;
+  title?: string;
+  description?: string;
+  mimeType?: string;
+  /** Scope required to see and read the resource; omit for resources any authorized agent may read. */
+  scope?: string;
+  _meta?: Record<string, unknown>;
+  read: (ctx: ToolContext) => Promise<ResourceContent[]>;
 }
 
 export interface Origins {
@@ -112,6 +141,8 @@ export interface McpAppServerConfig {
   scopes?: Record<string, ScopeDefinition>;
   identity: IdentityProvider;
   tools: readonly AgentTool[];
+  /** Static resources (for example MCP Apps `ui://` HTML). Default: none, and `resources/list` is not advertised. */
+  resources?: readonly AgentResource[];
   /**
    * Where clients, codes and tokens live. Implement `AppServerStore` over your own database, or use
    * `memoryStore()` (dev/tests) or `sqlStore()` from `@ninomae/mcp-app-server/sql` (D1, SQLite).

@@ -179,10 +179,26 @@ interface AgentTool {
   description: string;
   inputSchema: ZodRawShape;       // zod v4 shape; published as JSON Schema
   annotations: { readOnlyHint: boolean; destructiveHint?: boolean; idempotentHint?: boolean; openWorldHint: boolean };
-  handler(args, ctx: ToolContext): Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }>;
+  _meta?: Record<string, unknown>; // passed through to tools/list, e.g. { ui: { resourceUri: 'ui://…' } }
+  handler(args, ctx: ToolContext): Promise<{ content: { type: 'text'; text: string }[]; structuredContent?: object; isError?: boolean }>;
 }
 interface ToolContext { ownerId; scopes; grantId; clientId; clientName; request }
 ```
+
+### Resources (MCP Apps)
+
+`resources` lists static resources next to the tools. Register the HTML of an [MCP App](https://github.com/modelcontextprotocol/ext-apps) under a `ui://` URI and point a tool at it through `_meta.ui.resourceUri`; hosts such as Claude and ChatGPT then render it inline and let it call your other tools with the same grant:
+
+```ts
+resources: [{
+  uri: 'ui://my-app/quiz.html', name: 'quiz', mimeType: 'text/html;profile=mcp-app',
+  read: async (ctx) => [{ uri: 'ui://my-app/quiz.html', mimeType: 'text/html;profile=mcp-app', text: html }],
+}]
+```
+
+Resources take the same optional `scope` as tools. `resources/list` is treated as anonymous discovery; `resources/read` needs a token. Only fixed URIs are supported (no resource templates).
+
+Keep the HTML user-independent: hosts may prefetch and cache `ui://` resources, so per-user data belongs in tool results (`structuredContent`) that the app fetches with the same grant. `ctx` is there for authorization and scope checks, not for templating.
 
 If your tools are thin wrappers over an existing REST API, forward `ctx.request`'s `Authorization` header to your own handlers and let that layer accept agent tokens via `mcp.authenticate(request)`.
 

@@ -127,3 +127,33 @@ void test('registrationLimit: a host-supplied limiter decides who may register',
   const open = createMcpAppServer({ name: 'open', basePath: '/api', identity: fixedIdentity('solo'), storage: memoryStore(), origins: { publicOrigin: origin, webOrigin: origin }, tools: [], registrationLimit: false });
   for (let i = 0; i < 25; i++) assert.equal((await register(open)).status, 201);
 });
+
+void test('resources: ui:// HTML is listed with tool _meta and read with the caller context', async () => {
+  const app = createMcpAppServer({
+    name: 'ui-host',
+    basePath: '/api',
+    identity: fixedIdentity('solo'),
+    storage: memoryStore(),
+    origins: { publicOrigin: origin, webOrigin: origin },
+    tools: [{ name: 'quiz', description: 'open quiz', inputSchema: {}, annotations: { readOnlyHint: true, openWorldHint: false }, _meta: { ui: { resourceUri: 'ui://ui-host/quiz.html' } }, handler: async () => ({ content: [{ type: 'text', text: 'ok' }], structuredContent: { questions: [] } }) }],
+    resources: [{ uri: 'ui://ui-host/quiz.html', name: 'quiz', mimeType: 'text/html;profile=mcp-app', read: async (ctx) => { assert.equal(ctx.ownerId, 'solo'); return [{ uri: 'ui://ui-host/quiz.html', mimeType: 'text/html;profile=mcp-app', text: '<p>quiz</p>' }]; } }],
+  });
+  const send = async (body, headers = {}) => (await app.fetch(new Request(origin + '/api/mcp', { method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', ...headers }, body: JSON.stringify(body) }))).json();
+  const client = await (await app.fetch(new Request(origin + '/api/oauth/register', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ client_name: 'ui', redirect_uris: ['http://localhost:9/cb'] }) }))).json();
+  const { verifier, challenge } = pkce();
+  const consent = await app.fetch(new Request(origin + '/api/oauth/authorize?' + new URLSearchParams({ response_type: 'code', client_id: client.client_id, redirect_uri: 'http://localhost:9/cb', code_challenge: challenge, code_challenge_method: 'S256' })));
+  const approved = await (await app.fetch(new Request(origin + '/api/oauth/approve', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ ...Object.fromEntries(new URL(consent.headers.get('location')).searchParams), decision: 'approve' }) }))).json();
+  const code = new URL(approved.redirect).searchParams.get('code');
+  const issued = await (await app.fetch(new Request(origin + '/api/oauth/token', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ grant_type: 'authorization_code', code, code_verifier: verifier, client_id: client.client_id, redirect_uri: 'http://localhost:9/cb' }) }))).json();
+  const auth = { authorization: 'Bearer ' + issued.access_token };
+
+  const anonymousList = await send({ jsonrpc: '2.0', id: 1, method: 'resources/list', params: {} });
+  assert.equal(anonymousList.result.resources[0].uri, 'ui://ui-host/quiz.html');
+  const tools = await send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} }, auth);
+  assert.deepEqual(tools.result.tools[0]._meta, { ui: { resourceUri: 'ui://ui-host/quiz.html' } });
+  const read = await send({ jsonrpc: '2.0', id: 3, method: 'resources/read', params: { uri: 'ui://ui-host/quiz.html' } }, auth);
+  assert.deepEqual(read.result.contents, [{ uri: 'ui://ui-host/quiz.html', mimeType: 'text/html;profile=mcp-app', text: '<p>quiz</p>' }]);
+  const called = await send({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'quiz', arguments: {} } }, auth);
+  assert.deepEqual(called.result.structuredContent, { questions: [] });
+  assert.equal(app.describe(new Request(origin + '/')).resources[0].uri, 'ui://ui-host/quiz.html');
+});

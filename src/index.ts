@@ -96,7 +96,7 @@ export function createMcpAppServer(config: McpAppServerConfig): McpAppServer {
     const method = request.method.toUpperCase();
     const anonymous = !request.headers.has('authorization');
     if (anonymous && method === 'POST' && config.anonymousDiscovery !== false && (await isDiscoveryRequest(request))) {
-      return serveMcp({ name: config.name, version, tools: config.tools, request, ctx: null });
+      return serveMcp({ name: config.name, version, tools: config.tools, resources: config.resources, request, ctx: null });
     }
     let grant: AuthenticatedGrant | null;
     try {
@@ -115,7 +115,7 @@ export function createMcpAppServer(config: McpAppServerConfig): McpAppServer {
         return result;
       },
     }));
-    return serveMcp({ name: config.name, version, tools, request, ctx });
+    return serveMcp({ name: config.name, version, tools, resources: config.resources, request, ctx });
   }
 
   return {
@@ -126,7 +126,7 @@ export function createMcpAppServer(config: McpAppServerConfig): McpAppServer {
     async ensureSchema() {
       await config.storage.ensureSchema?.();
     },
-    describe: (request) => describeServer({ name: config.name, version, origins: origins(request), mcpPath: paths.mcp, scopes: scopeNames, tools: config.tools, contract: config.contract }),
+    describe: (request) => describeServer({ name: config.name, version, origins: origins(request), mcpPath: paths.mcp, scopes: scopeNames, tools: config.tools, resources: config.resources, contract: config.contract }),
     serverJson: (request, namespace, description) => registryEntry({ namespace, name: config.name, version, description, origins: origins(request), mcpPath: paths.mcp }),
     listGrants: (ownerId) => tokens.list(ownerId),
     async revokeGrant(ownerId, grantId) {

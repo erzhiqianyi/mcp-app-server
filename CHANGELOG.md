@@ -4,7 +4,12 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-21
+
 ### Added
+- `resources`: static resources (for example MCP Apps `ui://` HTML) listed by `resources/list`, served by `resources/read` with the caller's `ToolContext`, scope-trimmed like tools, and included in the public schema document. `resources/list` counts as anonymous discovery.
+- `AgentTool.title` and `AgentTool._meta` pass through to `tools/list`, so a tool can declare `_meta.ui.resourceUri` for MCP Apps hosts.
+- `ToolResult.structuredContent` / `_meta` pass through to `tools/call` results.
 - Japanese README and guides (`README.ja.md`, `docs/*.ja.md`).
 
 ## [0.1.0] - 2026-09-15
@@ -23,5 +28,6 @@ Initial release. Extracted from the Career Note monorepo (where it was briefly n
 - `@ninomae/mcp-app-server/react`: headless `useAgentConsent` hook.
 - Tests: Miniflare + D1 end-to-end, replay/revocation rules on `memoryStore`, `sqlStore` on plain Node `node:sqlite`.
 
-[Unreleased]: https://github.com/erzhiqianyi/mcp-app-server/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/erzhiqianyi/mcp-app-server/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/erzhiqianyi/mcp-app-server/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/erzhiqianyi/mcp-app-server/releases/tag/v0.1.0

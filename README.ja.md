@@ -80,6 +80,21 @@ tools: [
 
 `ctx` には `ownerId / scopes / grantId / clientId / clientName / request` が入ります。すべて検証済みトークン由来で、ツール入力からは決して取りません。ツールが既存 REST API の薄いラッパーなら、`ctx.request` の `Authorization` ヘッダーを自分のハンドラへ転送し、REST 層では `mcp.authenticate(request)` でエージェントトークンを受け付けてください。
 
+#### リソース（MCP Apps）
+
+`resources` にはツールと並べて静的リソースを登録できます。[MCP App](https://github.com/modelcontextprotocol/ext-apps) の HTML を `ui://` URI で登録し、ツールの `_meta.ui.resourceUri` から指すと、Claude や ChatGPT などのホストがインラインで描画し、同じグラントで他のツールを呼び出せます。
+
+```ts
+resources: [{
+  uri: 'ui://my-app/quiz.html', name: 'quiz', mimeType: 'text/html;profile=mcp-app',
+  read: async (ctx) => [{ uri: 'ui://my-app/quiz.html', mimeType: 'text/html;profile=mcp-app', text: html }],
+}]
+```
+
+リソースもツールと同じく任意の `scope` を持てます。`resources/list` は匿名ディスカバリー扱い、`resources/read` にはトークンが必要です。固定 URI のみ対応（リソーステンプレートは未対応）。
+
+HTML はユーザーに依存しない内容にしてください。ホストは `ui://` リソースを先読み・キャッシュすることがあるため、ユーザーごとのデータはアプリが同じグラントで取得するツール結果（`structuredContent`）に置きます。`ctx` は認可と scope 判定のためのもので、テンプレート用ではありません。
+
 ### 4. サーバーを作りルーティングに載せる
 
 ```ts
