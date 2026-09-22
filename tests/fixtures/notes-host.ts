@@ -3,6 +3,7 @@
 import { z } from 'zod';
 import { createMcpAppServer, sessionIdentity } from '../../src/index.js';
 import { sqlStore, type SqlDatabase } from '../../src/sql.js';
+import { inspectorResponse } from '../../src/inspector.js';
 
 type Env = { NOTES_DB: SqlDatabase };
 
@@ -26,7 +27,7 @@ export default {
         resolve: async ({ ownerId }) => ({ user: { displayName: ownerId }, environment: 'test', dataSource: 'notes-d1' }),
       },
       storage: sqlStore(db),
-      inspector: true,
+      inspector: inspectorResponse,
       origins: { publicOrigin: 'http://notes.local', webOrigin: 'http://notes.local' },
       tools: [
         {

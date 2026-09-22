@@ -16,6 +16,10 @@ const state = {
   tools: [] as Tool[],
   resources: [] as Resource[],
   status: '',
+  selected: '',                                   // 'tool:<name>' | 'resource:<uri>'
+  filter: '',
+  args: {} as Record<string, string>,             // JSON argument text per tool, kept across re-renders
+  outputs: {} as Record<string, string>,          // last result per selected key
 };
 
 const escapeHtml = (value: unknown) => String(value ?? '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[char]!);
@@ -120,43 +124,138 @@ async function loadSurface() {
   const resources = await rpc('resources/list').catch(() => ({ result: { resources: [] } }));
   state.tools = ((tools.result as Json)?.tools || []) as Tool[];
   state.resources = ((resources.result as Json)?.resources || []) as Resource[];
+  const first = state.tools[0] ? `tool:${state.tools[0].name}` : state.resources[0] ? `resource:${state.resources[0].uri}` : '';
+  if (!state.selected || !findSelected()) state.selected = first;
   setStatus(`Connected to ${String((initialized.result as Json)?.serverInfo ? ((initialized.result as Json).serverInfo as Json).name : 'MCP server')}.`);
 }
 
-async function callTool(name: string, form: HTMLFormElement, output: HTMLElement) {
+// Tools are split by their MCP annotations: `readOnlyHint: true` is a read; anything else is
+// treated as a write (an unannotated tool may mutate, so it is never shown as safe).
+type Kind = 'read' | 'write' | 'destructive';
+const kindOf = (tool: Tool): Kind => {
+  const a = tool.annotations || {};
+  if (a.readOnlyHint === true) return 'read';
+  return a.destructiveHint === true ? 'destructive' : 'write';
+};
+const kindLabel: Record<Kind, string> = { read: 'Read', write: 'Write', destructive: 'Destructive write' };
+
+async function runTool(tool: Tool) {
+  const key = `tool:${tool.name}`;
+  const kind = kindOf(tool);
+  if (kind === 'destructive' && !confirm(`"${tool.name}" is annotated as destructive. Run it?`)) return;
+  state.outputs[key] = 'Running…';
+  render();
   try {
-    const raw = form.elements.namedItem('arguments') as HTMLTextAreaElement;
-    const result = await rpc('tools/call', { name, arguments: raw.value.trim() ? JSON.parse(raw.value) : {} });
-    output.textContent = JSON.stringify(result.result ?? result, null, 2);
+    const raw = state.args[tool.name] || '';
+    const result = await rpc('tools/call', { name: tool.name, arguments: raw.trim() ? JSON.parse(raw) : {} });
+    state.outputs[key] = JSON.stringify(result.result ?? result, null, 2);
   } catch (error) {
-    output.textContent = error instanceof Error ? error.message : String(error);
+    state.outputs[key] = error instanceof Error ? error.message : String(error);
   }
+  render();
 }
 
-function toolCard(tool: Tool) {
+async function readResource(resource: Resource) {
+  const key = `resource:${resource.uri}`;
+  state.outputs[key] = 'Reading…';
+  render();
+  try {
+    const result = await rpc('resources/read', { uri: resource.uri });
+    state.outputs[key] = JSON.stringify(result.result ?? result, null, 2);
+  } catch (error) {
+    state.outputs[key] = error instanceof Error ? error.message : String(error);
+  }
+  render();
+}
+
+function findSelected(): { tool: Tool } | { resource: Resource } | null {
+  const [type, ...rest] = state.selected.split(':');
+  const id = rest.join(':');
+  if (type === 'tool') { const tool = state.tools.find((t) => t.name === id); return tool ? { tool } : null; }
+  if (type === 'resource') { const resource = state.resources.find((r) => r.uri === id); return resource ? { resource } : null; }
+  return null;
+}
+
+const matches = (text: string) => !state.filter || text.toLowerCase().includes(state.filter.toLowerCase());
+
+function navItem(key: string, label: string, badge: string, kind: Kind | 'resource') {
+  return `<li><button class="nav-item ${kind} ${state.selected === key ? 'active' : ''}" data-select="${escapeHtml(key)}"><span class="badge ${kind}">${badge}</span><span class="nav-label">${escapeHtml(label)}</span></button></li>`;
+}
+
+function navSection(title: string, items: string[]) {
+  return `<section class="nav-section"><h2>${title} <span class="count">${items.length}</span></h2>${items.length ? `<ul>${items.join('')}</ul>` : '<p class="muted">None</p>'}</section>`;
+}
+
+function sidebar() {
+  if (!state.tools.length && !state.resources.length) return '<p class="muted">Authorize and inspect the server to list its tools and resources.</p>';
+  const tools = state.tools.filter((t) => matches(`${t.name} ${t.title || ''}`));
+  const reads = tools.filter((t) => kindOf(t) === 'read').map((t) => navItem(`tool:${t.name}`, t.name, 'R', 'read'));
+  const writes = tools.filter((t) => kindOf(t) !== 'read').map((t) => navItem(`tool:${t.name}`, t.name, kindOf(t) === 'destructive' ? 'W!' : 'W', kindOf(t)));
+  const resources = state.resources.filter((r) => matches(`${r.uri} ${r.name} ${r.title || ''}`)).map((r) => navItem(`resource:${r.uri}`, r.title || r.name, 'res', 'resource'));
+  return `<input id="filter" type="search" placeholder="Filter…" value="${escapeHtml(state.filter)}">
+    ${navSection('Read tools', reads)}${navSection('Write tools', writes)}${navSection('Resources', resources)}`;
+}
+
+function annotationBadges(tool: Tool) {
+  const a = tool.annotations || {};
+  const kind = kindOf(tool);
+  const extra = [
+    a.idempotentHint === true ? 'idempotent' : '',
+    a.openWorldHint === true ? 'open world' : '',
+    tool.annotations ? '' : 'unannotated',
+  ].filter(Boolean);
+  return `<span class="badge ${kind}">${kindLabel[kind]}</span>${extra.map((e) => `<span class="badge plain">${e}</span>`).join('')}`;
+}
+
+function toolDetail(tool: Tool) {
+  const kind = kindOf(tool);
+  const key = `tool:${tool.name}`;
   const schema = tool.inputSchema || { type: 'object', properties: {} };
-  return `<article class="card"><h3>${escapeHtml(tool.title || tool.name)}</h3>
-    <p>${escapeHtml(tool.description)}</p><small>${escapeHtml(tool.name)}${tool._meta ? ` · _meta ${pretty(tool._meta)}` : ''}</small>
-    <details><summary>Input schema</summary><pre>${pretty(schema)}</pre></details>
-    <form data-tool="${escapeHtml(tool.name)}"><textarea name="arguments" rows="4" placeholder='JSON arguments, e.g. {"query":"hello"}'></textarea><button>Call tool</button></form>
-    <pre class="output" data-output="${escapeHtml(tool.name)}">No call yet.</pre></article>`;
+  const action = { read: 'Read (tools/call)', write: 'Write (tools/call)', destructive: 'Run destructive write (tools/call)' }[kind];
+  return `<header class="detail-head"><h2>${escapeHtml(tool.title || tool.name)}</h2><code>${escapeHtml(tool.name)}</code><div class="badges">${annotationBadges(tool)}</div></header>
+    <p>${escapeHtml(tool.description)}</p>
+    ${tool._meta ? `<details><summary>_meta</summary><pre>${pretty(tool._meta)}</pre></details>` : ''}
+    <details open><summary>Input schema</summary><pre>${pretty(schema)}</pre></details>
+    <form data-tool="${escapeHtml(tool.name)}"><label class="stack">Arguments (JSON)<textarea name="arguments" rows="6" placeholder='{"query":"hello"}'>${escapeHtml(state.args[tool.name] || '')}</textarea></label>
+    <button class="run ${kind}">${action}</button>${kind === 'read' ? '<span class="muted">Annotated read-only: safe to repeat.</span>' : '<span class="muted">This tool may change data on the server.</span>'}</form>
+    <h3>Result</h3><pre class="output">${escapeHtml(state.outputs[key] ?? 'No call yet.')}</pre>`;
+}
+
+function resourceDetail(resource: Resource) {
+  const key = `resource:${resource.uri}`;
+  return `<header class="detail-head"><h2>${escapeHtml(resource.title || resource.name)}</h2><code>${escapeHtml(resource.uri)}</code><div class="badges"><span class="badge resource">Resource</span>${resource.mimeType ? `<span class="badge plain">${escapeHtml(resource.mimeType)}</span>` : ''}</div></header>
+    <p>${escapeHtml(resource.description)}</p>
+    ${resource._meta ? `<details><summary>_meta</summary><pre>${pretty(resource._meta)}</pre></details>` : ''}
+    <button class="run read" data-resource="${escapeHtml(resource.uri)}">Read (resources/read)</button>
+    <h3>Result</h3><pre class="output">${escapeHtml(state.outputs[key] ?? 'Not read yet.')}</pre>`;
+}
+
+function detail() {
+  const selected = findSelected();
+  if (!selected) return '<p class="muted">Select a tool or resource on the left.</p>';
+  return 'tool' in selected ? toolDetail(selected.tool) : resourceDetail(selected.resource);
 }
 
 function render() {
-  root.innerHTML = `<header><h1>MCP Inspector</h1><p>Development-only OAuth and MCP surface tester.</p></header>
-    <section class="panel"><label>MCP endpoint <input id="server" value="${escapeHtml(state.serverUrl)}" placeholder="https://example.com/api/mcp"></label>
-    <button id="authorize">${state.token ? 'Reconnect' : 'Authorize'}</button><button id="inspect" ${state.token ? '' : 'disabled'}>Inspect server</button>
-    <button id="clear">Clear token</button><p class="status">${escapeHtml(state.status)}</p></section>
-    <section><h2>Tools (${state.tools.length})</h2>${state.tools.length ? state.tools.map(toolCard).join('') : '<p>Authorize and inspect the server to list tools.</p>'}</section>
-    <section><h2>Resources (${state.resources.length})</h2>${state.resources.length ? state.resources.map((resource) => `<article class="card"><h3>${escapeHtml(resource.title || resource.name)}</h3><p>${escapeHtml(resource.description)}</p><code>${escapeHtml(resource.uri)}</code><button data-resource="${escapeHtml(resource.uri)}">Read resource</button><pre class="output" data-resource-output="${escapeHtml(resource.uri)}"></pre></article>`).join('') : '<p>No resources advertised.</p>'}</section>`;
+  root.innerHTML = `<header class="topbar"><div><h1>MCP Inspector</h1><p class="muted">Development-only OAuth and MCP surface tester.</p></div>
+    <form class="connect" id="connect"><input id="server" value="${escapeHtml(state.serverUrl)}" placeholder="https://example.com/api/mcp" aria-label="MCP endpoint">
+    <button type="button" id="authorize">${state.token ? 'Reconnect' : 'Authorize'}</button><button type="button" id="inspect" ${state.token ? '' : 'disabled'}>Inspect server</button>
+    <button type="button" id="clear" class="secondary">Clear token</button></form><p class="status">${escapeHtml(state.status)}</p></header>
+    <div class="layout"><nav class="sidebar">${sidebar()}</nav><section class="detail">${detail()}</section></div>`;
   root.querySelector<HTMLInputElement>('#server')!.onchange = (event) => { state.serverUrl = (event.target as HTMLInputElement).value.trim(); localStorage.setItem('mcp-inspector-server', state.serverUrl); };
+  root.querySelector('#connect')!.addEventListener('submit', (event) => event.preventDefault());
   root.querySelector('#authorize')!.addEventListener('click', () => void authorize().catch((error) => setStatus(error.message)));
   root.querySelector('#inspect')!.addEventListener('click', () => void loadSurface().catch((error) => setStatus(error.message)));
   root.querySelector('#clear')!.addEventListener('click', () => { state.token = ''; sessionStorage.removeItem('mcp-inspector-token'); render(); });
-  root.querySelectorAll<HTMLFormElement>('form[data-tool]').forEach((form) => form.onsubmit = (event) => { event.preventDefault(); void callTool(form.dataset.tool!, form, form.nextElementSibling as HTMLElement); });
-  root.querySelectorAll<HTMLButtonElement>('button[data-resource]').forEach((button) => button.onclick = async () => {
-    try { const result = await rpc('resources/read', { uri: button.dataset.resource }); root.querySelector(`[data-resource-output="${CSS.escape(button.dataset.resource!)}"]`)!.textContent = JSON.stringify(result.result ?? result, null, 2); } catch (error) { setStatus(error instanceof Error ? error.message : String(error)); }
+  const filter = root.querySelector<HTMLInputElement>('#filter');
+  if (filter) filter.oninput = () => { state.filter = filter.value; const pos = filter.selectionStart; render(); const next = root.querySelector<HTMLInputElement>('#filter')!; next.focus(); next.setSelectionRange(pos, pos); };
+  root.querySelectorAll<HTMLButtonElement>('[data-select]').forEach((button) => button.onclick = () => { state.selected = button.dataset.select!; render(); });
+  root.querySelectorAll<HTMLFormElement>('form[data-tool]').forEach((form) => {
+    const tool = state.tools.find((t) => t.name === form.dataset.tool)!;
+    (form.elements.namedItem('arguments') as HTMLTextAreaElement).oninput = (event) => { state.args[tool.name] = (event.target as HTMLTextAreaElement).value; };
+    form.onsubmit = (event) => { event.preventDefault(); void runTool(tool); };
   });
+  root.querySelectorAll<HTMLButtonElement>('button[data-resource]').forEach((button) => button.onclick = () => void readResource(state.resources.find((r) => r.uri === button.dataset.resource)!));
 }
 
 void finishAuthorization().then(() => render()).catch((error) => { state.status = error.message; render(); });

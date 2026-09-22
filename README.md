@@ -112,7 +112,7 @@ Every access token is bound to `ownerId` + `clientId` + granted scopes + the aud
 | `onEvent` | no | Audit hook: `authorized` / `refreshed` / `revoked` / `tool`. Never receives tool payloads. |
 | `anonymousDiscovery` | no | Default `true`. Let `initialize` / `tools/list` answer without a token. |
 | `contract` | no | Free-text (markdown) data contract published with the schema. |
-| `inspector` | no | Default `false`. Serve the dev inspector at `GET <base>/mcp/inspector` — see [Testing with the inspector](#testing-with-the-inspector). |
+| `inspector` | no | Off by default. Pass `inspectorResponse` from `@ninomae/mcp-app-server/inspector` to serve the dev inspector at `GET <base>/mcp/inspector` — see [Testing with the inspector](#testing-with-the-inspector). Development/testing only; never enable in production. |
 
 ### Identity
 
@@ -244,7 +244,7 @@ The hook is headless: render your own login and layout, map `client.scopeDetails
 | `GET <base>/oauth/client` | none | Client + scope descriptions for the consent page |
 | `POST <base>/oauth/approve` | **host identity** | User approves/denies → authorization code |
 | `POST <base>/oauth/token` | client | Code exchange, refresh rotation |
-| `GET <base>/mcp/inspector` | none (only when `inspector: true`) | Dev-only browser inspector |
+| `GET <base>/mcp/inspector` | none (only when `inspector` is set) | Dev-only browser inspector |
 
 ## Testing with the inspector
 
@@ -253,18 +253,23 @@ The package ships a small browser page that exercises your server end to end wit
 Turn it on outside production and open `<base>/mcp/inspector` on the same origin as your server:
 
 ```ts
+import { inspectorResponse } from '@ninomae/mcp-app-server/inspector';
+
 const mcp = createMcpAppServer({
   // ...
-  inspector: env.NODE_ENV !== 'production',
+  inspector: env.NODE_ENV !== 'production' && inspectorResponse,
 });
 // → GET https://notes.example.com/api/notes/mcp/inspector
 ```
 
 1. The endpoint field is pre-filled with this server's `<base>/mcp`. Click **Authorize**: the page registers a public client whose redirect URI is its own URL, then sends you to your consent page.
 2. Sign in and approve as you normally would. You land back on the inspector with a token in `sessionStorage`.
-3. **Inspect server** runs `initialize` → `tools/list` → `resources/list` and renders one card per tool. Paste arguments as JSON and **Call tool**; **Read resource** does `resources/read`.
+3. **Inspect server** runs `initialize` → `tools/list` → `resources/list`. The left pane lists everything the grant can see, split into **Read tools**, **Write tools** and **Resources** (with a filter box); click an entry to open it on the right.
+4. A tool's page shows its annotations, input schema, a JSON arguments box and a button that names the operation: **Read (tools/call)** for tools annotated `readOnlyHint: true`, **Write (tools/call)** for everything else, and **Run destructive write** (with a confirmation prompt) for `destructiveHint: true`. A tool with no annotations is listed under writes and flagged `unannotated`, since the page cannot know it is safe. Resources have **Read (resources/read)**. Results stay attached to each entry while you move around the list.
 
-Because the page is served from your origin, no CORS headers are needed, and the redirect URI is `https://…` (or loopback in local dev), which the registration rules already accept. The HTML is inlined into `dist/` at build time and never cached (`cache-control: no-store`, `noindex`); when `inspector` is unset or `false` the route is not the server's and falls through to your app. Do not leave it enabled in production: it is a public page that lets anyone start an OAuth flow against your server.
+Because the page is served from your origin, no CORS headers are needed, and the redirect URI is `https://…` (or loopback in local dev), which the registration rules already accept. The HTML is inlined into `dist/` at build time and never cached (`cache-control: no-store`, `noindex`); when `inspector` is unset or `false` the route is not the server's and falls through to your app.
+
+> **Development and testing only.** The inspector is meant for local development, staging and QA. Never enable it in production: it is an unauthenticated public page that lets anyone start an OAuth flow against your server and, once a user has consented, run write tools from a browser. Gate it on your environment (`inspector: env.NODE_ENV !== 'production' && inspectorResponse`) or leave it unset, which is the default.
 
 For a standalone copy that runs on `http://127.0.0.1:8787` against remote servers, see [examples/inspector](./examples/inspector). Note that this cross-origin mode requires the target server to allow CORS from loopback origins, which this package does not do by default.
 

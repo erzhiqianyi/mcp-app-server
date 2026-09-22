@@ -47,6 +47,10 @@
       "types": "./dist/react.d.ts",
       "default": "./dist/react.js"
     },
+    "./inspector": {
+      "types": "./dist/inspector.d.ts",
+      "default": "./dist/inspector.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

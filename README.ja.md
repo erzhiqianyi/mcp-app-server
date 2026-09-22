@@ -178,18 +178,23 @@ mcp.revokeGrant(ownerId, grantId)   // 失効させ、リフレッシュの連�
 本番以外で有効にし、サーバーと同一オリジンの `<base>/mcp/inspector` を開きます：
 
 ```ts
+import { inspectorResponse } from '@ninomae/mcp-app-server/inspector';
+
 const mcp = createMcpAppServer({
   // ...
-  inspector: env.NODE_ENV !== 'production',
+  inspector: env.NODE_ENV !== 'production' && inspectorResponse,
 });
 // → GET https://notes.example.com/api/notes/mcp/inspector
 ```
 
 1. エンドポイント欄にはこのサーバーの `<base>/mcp` が入力済みです。**Authorize** を押すと、ページは自分の URL をリダイレクト URI とする public client を登録し、同意画面へ遷移します。
 2. いつも通りログインして許可すると、インスペクタに戻り、トークンが `sessionStorage` に保存されます。
-3. **Inspect server** が `initialize` → `tools/list` → `resources/list` を実行し、ツールごとにカードを表示します。JSON 引数を入れて **Call tool**、リソースカードの **Read resource** で `resources/read` を実行します。
+3. **Inspect server** が `initialize` → `tools/list` → `resources/list` を実行します。左ペインには許可で見える項目が **Read tools**・**Write tools**・**Resources** に分かれて一覧され（フィルタ付き）、項目を選ぶと右側に詳細が表示されます。
+4. ツールの詳細には annotations、入力スキーマ、JSON 引数欄と、操作の種類を名前にしたボタンが並びます。`readOnlyHint: true` のツールは **Read (tools/call)**、それ以外は **Write (tools/call)**、`destructiveHint: true` は **Run destructive write**（実行前に確認ダイアログ）です。annotations のないツールは安全と判断できないため write 側に置かれ `unannotated` と表示されます。リソースは **Read (resources/read)** です。結果は項目ごとに保持され、一覧を行き来しても消えません。
 
-ページはあなたのオリジンから配信されるため CORS ヘッダーは不要で、リダイレクト URI は `https://…`（ローカル開発では loopback）となり、登録ルールがそのまま受け付けます。HTML はビルド時に `dist/` へインライン化され、`cache-control: no-store` と `noindex` 付きで返されます。`inspector` が未設定または `false` の場合、このパスはサーバーのものではなくアプリ側にフォールスルーします。本番では有効にしないでください。誰でもあなたのサーバーに対して OAuth フローを開始できる公開ページです。
+ページはあなたのオリジンから配信されるため CORS ヘッダーは不要で、リダイレクト URI は `https://…`（ローカル開発では loopback）となり、登録ルールがそのまま受け付けます。HTML はビルド時に `dist/` へインライン化され、`cache-control: no-store` と `noindex` 付きで返されます。`inspector` が未設定または `false` の場合、このパスはサーバーのものではなくアプリ側にフォールスルーします。
+
+> **開発・テスト専用です。** インスペクタはローカル開発、ステージング、QA のためのものです。本番では絶対に有効にしないでください。認証なしの公開ページであり、誰でもあなたのサーバーに対して OAuth フローを開始でき、ユーザーが同意すればブラウザから書き込みツールを実行できます。環境で切り替えるか（`inspector: env.NODE_ENV !== 'production' && inspectorResponse`）、未設定のままにしてください（デフォルトは無効）。
 
 `http://127.0.0.1:8787` で動かしてリモートサーバーを調べるスタンドアロン版は [examples/inspector](./examples/inspector) を参照。このクロスオリジン方式では対象サーバーが loopback オリジンからの CORS を許可する必要があり、本パッケージはデフォルトでは許可しません。
 
@@ -207,7 +212,7 @@ const mcp = createMcpAppServer({
 | `GET <base>/oauth/client` | なし | 同意画面がクライアント情報と scope 説明を取得 |
 | `POST <base>/oauth/approve` | **ホストの ID** | ユーザーの許可/拒否 → 認可コード |
 | `POST <base>/oauth/token` | クライアント | コード交換、リフレッシュのローテーション |
-| `GET <base>/mcp/inspector` | なし（`inspector: true` のときのみ） | 開発用ブラウザ・インスペクタ |
+| `GET <base>/mcp/inspector` | なし（`inspector` を設定したときのみ） | 開発用ブラウザ・インスペクタ |
 
 ## 本パッケージがやらないこと
 

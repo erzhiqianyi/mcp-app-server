@@ -212,9 +212,11 @@ export interface McpAppServerConfig {
   /**
    * Serve the development inspector at `GET <basePath>/mcp/inspector`: a browser page that runs the
    * OAuth flow against this server, lists tools/resources and calls them. Same-origin, so no CORS is
-   * needed. Default false — enable it only outside production (e.g. `inspector: env.DEV === 'true'`).
+   * needed. Pass `inspectorResponse` from `@ninomae/mcp-app-server/inspector`; the core never imports
+   * that module itself, so a build that leaves the option out (or passes `false`) does not carry the
+   * page. Enable it only outside production, e.g. `inspector: dev && inspectorResponse`.
    */
-  inspector?: boolean;
+  inspector?: false | ((mcpPath: string) => Response | Promise<Response>);
 }
 
 export class AppServerError extends Error {

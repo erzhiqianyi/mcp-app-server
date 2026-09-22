@@ -7,7 +7,6 @@ import { createTokenStore } from './tokens.js';
 import * as oauth from './oauth.js';
 import { describeServer, isDiscoveryRequest, registryEntry, serveMcp } from './mcp.js';
 import { connectionInfoTool } from './connection-info.js';
-import { inspectorResponse } from './inspector.js';
 import { memoryRateLimiter } from './rate-limit.js';
 
 export * from './types.js';
@@ -151,7 +150,7 @@ export function createMcpAppServer(config: McpAppServerConfig): McpAppServer {
       if (pathname === paths.schema && method === 'GET') {
         return new Response(JSON.stringify(this.describe(request)), { headers: { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=300' } });
       }
-      if (config.inspector && pathname === paths.inspector && method === 'GET') return inspectorResponse(paths.mcp);
+      if (config.inspector && pathname === paths.inspector && method === 'GET') return config.inspector(paths.mcp);
       if (pathname.startsWith(paths.oauth + '/')) return handleOauth(rt, request, pathname);
       if (pathname === paths.mcp) return handleMcp(rt, request);
       return null;

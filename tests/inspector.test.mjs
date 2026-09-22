@@ -1,8 +1,11 @@
-// The inspector is opt-in: without `inspector: true` the route is not the server's and falls through
-// to the host (null), so a production deployment that never enabled it exposes nothing.
+// The inspector is opt-in: without an `inspector` handler the route is not the server's and falls
+// through to the host (null), so a production deployment that never enabled it exposes nothing —
+// and, because the core never imports the page module, does not even ship it.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import { createMcpAppServer, fixedIdentity, memoryStore } from '../dist/index.js';
+import { inspectorResponse } from '../dist/inspector.js';
 
 const origin = 'http://app.local';
 const server = (inspector) => createMcpAppServer({
@@ -18,11 +21,17 @@ const server = (inspector) => createMcpAppServer({
 void test('inspector: disabled by default and only answers GET', async () => {
   assert.equal(await server().fetch(new Request(origin + '/api/mcp/inspector')), null);
   assert.equal(await server(false).fetch(new Request(origin + '/api/mcp/inspector')), null);
-  assert.equal(await server(true).fetch(new Request(origin + '/api/mcp/inspector', { method: 'POST' })), null);
+  assert.equal(await server(inspectorResponse).fetch(new Request(origin + '/api/mcp/inspector', { method: 'POST' })), null);
+});
+
+void test('inspector: the core entry never references the page module', async () => {
+  for (const file of ['index.js', 'mcp.js', 'oauth.js']) {
+    assert.doesNotMatch(await readFile(new URL('../dist/' + file, import.meta.url), 'utf8'), /inspector\.js|bundle\.generated/, file);
+  }
 });
 
 void test('inspector: serves a self-contained page pointing at this server', async () => {
-  const mcp = server(true);
+  const mcp = server(inspectorResponse);
   assert.equal(mcp.paths.inspector, '/api/mcp/inspector');
   const response = await mcp.fetch(new Request(origin + '/api/mcp/inspector'));
   assert.equal(response.status, 200);

@@ -163,18 +163,23 @@ mcp.revokeGrant(ownerId, grantId)   // 撤销并切断整条 refresh 链
 在非生产环境打开开关，然后访问和服务器同源的 `<base>/mcp/inspector`：
 
 ```ts
+import { inspectorResponse } from '@ninomae/mcp-app-server/inspector';
+
 const mcp = createMcpAppServer({
   // ...
-  inspector: env.NODE_ENV !== 'production',
+  inspector: env.NODE_ENV !== 'production' && inspectorResponse,
 });
 // → GET https://notes.example.com/api/notes/mcp/inspector
 ```
 
 1. 端点输入框已预填为本服务器的 `<base>/mcp`。点 **Authorize**：页面注册一个 public client（redirect URI 就是它自己的地址），然后跳到你的同意页。
 2. 像平时一样登录、同意，回到 inspector，token 存在 `sessionStorage`。
-3. **Inspect server** 依次执行 `initialize` → `tools/list` → `resources/list`，每个工具一张卡片；填 JSON 参数点 **Call tool**，资源卡片点 **Read resource** 执行 `resources/read`。
+3. **Inspect server** 依次执行 `initialize` → `tools/list` → `resources/list`。左侧目录列出该授权能看到的全部条目，分为 **Read tools**、**Write tools** 和 **Resources** 三组（带过滤框）；点一项，右侧显示详情。
+4. 工具详情页展示 annotations、输入 schema、JSON 参数框，以及一个按操作类型命名的按钮：`readOnlyHint: true` 的工具是 **Read (tools/call)**，其余是 **Write (tools/call)**，`destructiveHint: true` 的是 **Run destructive write**（执行前弹确认）。没有 annotations 的工具归入写操作并标记 `unannotated`，因为页面无法判断它是否安全。资源用 **Read (resources/read)**。切换条目时各自的结果会保留。
 
-页面由你的 origin 直接提供，因此不需要任何 CORS 头；redirect URI 是 `https://…`（本地开发则是 loopback），注册规则本来就接受。HTML 在构建时内联进 `dist/`，响应带 `cache-control: no-store` 和 `noindex`；`inspector` 未设置或为 `false` 时该路径不属于服务器，会落到你的 app。不要在生产环境打开：它是公开页面，任何人都能借它对你的服务器发起 OAuth 流程。
+页面由你的 origin 直接提供，因此不需要任何 CORS 头；redirect URI 是 `https://…`（本地开发则是 loopback），注册规则本来就接受。HTML 在构建时内联进 `dist/`，响应带 `cache-control: no-store` 和 `noindex`；`inspector` 未设置或为 `false` 时该路径不属于服务器，会落到你的 app。
+
+> **仅限开发和测试阶段使用。** inspector 面向本地开发、staging 和 QA。生产环境绝不能开放这个接口：它是一个无需认证的公开页面，任何人都能借它对你的服务器发起 OAuth 流程，用户同意后还能直接在浏览器里执行写操作工具。请按环境开关（`inspector: env.NODE_ENV !== 'production' && inspectorResponse`），或者干脆不设置——默认就是关闭的。
 
 如需一个跑在 `http://127.0.0.1:8787`、对远程服务器调试的独立版本，见 [examples/inspector](./examples/inspector)。注意这种跨域模式要求目标服务器对 loopback 来源放开 CORS，本包默认不放开。
 
@@ -192,7 +197,7 @@ const mcp = createMcpAppServer({
 | `GET <base>/oauth/client` | 无 | 同意页读取客户端与 scope 说明 |
 | `POST <base>/oauth/approve` | **宿主身份** | 用户同意/拒绝 → 授权码 |
 | `POST <base>/oauth/token` | 客户端 | 授权码换 token、refresh 轮换 |
-| `GET <base>/mcp/inspector` | 无（仅 `inspector: true` 时存在） | 开发用浏览器调试页 |
+| `GET <base>/mcp/inspector` | 无（仅设置了 `inspector` 时存在） | 开发用浏览器调试页 |
 
 ## 本包不做什么
 
