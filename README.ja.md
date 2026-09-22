@@ -171,6 +171,28 @@ mcp.revokeGrant(ownerId, grantId)   // 失効させ、リフレッシュの連�
 
 各クライアント（Claude Code、Claude.ai、ChatGPT、Cursor、自作スクリプト）の具体的な接続手順は [docs/integration.ja.md](./docs/integration.ja.md) を参照。
 
+### 同梱インスペクタでテストする
+
+パッケージには、MCP クライアントを何もインストールせずにサーバーを端から端まで試せるブラウザページが同梱されています。自身を OAuth クライアントとして登録し、あなたの同意画面を経由して PKCE フローを完了し、その許可で見えるツールとリソースを列挙し、JSON 引数でツールを呼び出し、リソースを読み、`content`・`structuredContent`・エラーをそのまま表示します。
+
+本番以外で有効にし、サーバーと同一オリジンの `<base>/mcp/inspector` を開きます：
+
+```ts
+const mcp = createMcpAppServer({
+  // ...
+  inspector: env.NODE_ENV !== 'production',
+});
+// → GET https://notes.example.com/api/notes/mcp/inspector
+```
+
+1. エンドポイント欄にはこのサーバーの `<base>/mcp` が入力済みです。**Authorize** を押すと、ページは自分の URL をリダイレクト URI とする public client を登録し、同意画面へ遷移します。
+2. いつも通りログインして許可すると、インスペクタに戻り、トークンが `sessionStorage` に保存されます。
+3. **Inspect server** が `initialize` → `tools/list` → `resources/list` を実行し、ツールごとにカードを表示します。JSON 引数を入れて **Call tool**、リソースカードの **Read resource** で `resources/read` を実行します。
+
+ページはあなたのオリジンから配信されるため CORS ヘッダーは不要で、リダイレクト URI は `https://…`（ローカル開発では loopback）となり、登録ルールがそのまま受け付けます。HTML はビルド時に `dist/` へインライン化され、`cache-control: no-store` と `noindex` 付きで返されます。`inspector` が未設定または `false` の場合、このパスはサーバーのものではなくアプリ側にフォールスルーします。本番では有効にしないでください。誰でもあなたのサーバーに対して OAuth フローを開始できる公開ページです。
+
+`http://127.0.0.1:8787` で動かしてリモートサーバーを調べるスタンドアロン版は [examples/inspector](./examples/inspector) を参照。このクロスオリジン方式では対象サーバーが loopback オリジンからの CORS を許可する必要があり、本パッケージはデフォルトでは許可しません。
+
 ## エンドポイント一覧
 
 | パス | 認証 | 役割 |
@@ -185,6 +207,7 @@ mcp.revokeGrant(ownerId, grantId)   // 失効させ、リフレッシュの連�
 | `GET <base>/oauth/client` | なし | 同意画面がクライアント情報と scope 説明を取得 |
 | `POST <base>/oauth/approve` | **ホストの ID** | ユーザーの許可/拒否 → 認可コード |
 | `POST <base>/oauth/token` | クライアント | コード交換、リフレッシュのローテーション |
+| `GET <base>/mcp/inspector` | なし（`inspector: true` のときのみ） | 開発用ブラウザ・インスペクタ |
 
 ## 本パッケージがやらないこと
 
@@ -217,3 +240,31 @@ npm への公開手順は [docs/publishing.ja.md](./docs/publishing.ja.md)。
 ## ライセンス
 
 [MIT](./LICENSE)
+
+## アカウントと接続の診断
+
+`createMcpAppServer` に `connectionInfo: {}` を追加すると、読み取り専用の `get_connection_info` ツールを有効にできます。既定では無効です。検証済みユーザー ID、OAuth クライアント・認可 ID、スコープ、接続先、HTTP トランスポート、サーバーバージョンをテキストと `structuredContent` で返します。ユーザー ID を引数で指定することはできません。アプリ側の情報は次のコールバックで提供します。
+
+```ts
+connectionInfo: {
+  // toolName: 'myapp_get_connection_info', // optional
+  resolve: async ({ ownerId }) => {
+    const user = await users.findById(ownerId);
+    return {
+      user: user ? {
+        displayName: user.displayName,
+        email: user.email,
+        identities: [{ provider: 'firebase', subject: user.firebaseUid, issuer: firebaseProjectId }],
+      } : null,
+      environment: 'production',
+      dataSource: 'primary-db',
+    };
+  },
+},
+```
+
+`users`、`firebaseProjectId`、データソース名はホスト側で用意します。外部 ID がない場合は `identities` を省略してください。コールバックは毎回、検証済みコンテキストのみで呼ばれ、リクエストやトークンは受け取りません。業務ツールと同じデータソースから `ownerId` で検索し、ブラウザーのユーザーを代用しないでください。ユーザー削除時は `user: null`、コールバック未設定時は `unknown`、検索失敗時はツールエラーになります。
+
+公開フィールドのみを出力します。値に秘密情報や接続文字列を含めないでください。匿名のツール一覧取得ではコールバックを実行しません。呼び出しには有効な認可が必要です。独自のツール名は既存名と重複できません。監査フックも通常どおり動作します。
+
+接続先、環境・データソース、ユーザー ID、外部 ID の issuer/subject を Web アプリと比較してください。異なるデータベースの同じ数値 ID は同一アカウントを意味しません。Web 側のアカウント切り替えで MCP の認可は切り替わらないため、目的のアカウントで再接続します。本機能は同期成功を保証しません。独立した stdio サーバーには専用のアダプターが必要です。

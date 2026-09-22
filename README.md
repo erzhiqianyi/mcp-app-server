@@ -112,6 +112,7 @@ Every access token is bound to `ownerId` + `clientId` + granted scopes + the aud
 | `onEvent` | no | Audit hook: `authorized` / `refreshed` / `revoked` / `tool`. Never receives tool payloads. |
 | `anonymousDiscovery` | no | Default `true`. Let `initialize` / `tools/list` answer without a token. |
 | `contract` | no | Free-text (markdown) data contract published with the schema. |
+| `inspector` | no | Default `false`. Serve the dev inspector at `GET <base>/mcp/inspector` — see [Testing with the inspector](#testing-with-the-inspector). |
 
 ### Identity
 
@@ -243,6 +244,29 @@ The hook is headless: render your own login and layout, map `client.scopeDetails
 | `GET <base>/oauth/client` | none | Client + scope descriptions for the consent page |
 | `POST <base>/oauth/approve` | **host identity** | User approves/denies → authorization code |
 | `POST <base>/oauth/token` | client | Code exchange, refresh rotation |
+| `GET <base>/mcp/inspector` | none (only when `inspector: true`) | Dev-only browser inspector |
+
+## Testing with the inspector
+
+The package ships a small browser page that exercises your server end to end without any MCP client installed: it registers itself as an OAuth client, runs the PKCE flow through your consent page, lists the tools and resources the grant can see, calls tools with JSON arguments and reads resources, showing `content`, `structuredContent` and errors verbatim.
+
+Turn it on outside production and open `<base>/mcp/inspector` on the same origin as your server:
+
+```ts
+const mcp = createMcpAppServer({
+  // ...
+  inspector: env.NODE_ENV !== 'production',
+});
+// → GET https://notes.example.com/api/notes/mcp/inspector
+```
+
+1. The endpoint field is pre-filled with this server's `<base>/mcp`. Click **Authorize**: the page registers a public client whose redirect URI is its own URL, then sends you to your consent page.
+2. Sign in and approve as you normally would. You land back on the inspector with a token in `sessionStorage`.
+3. **Inspect server** runs `initialize` → `tools/list` → `resources/list` and renders one card per tool. Paste arguments as JSON and **Call tool**; **Read resource** does `resources/read`.
+
+Because the page is served from your origin, no CORS headers are needed, and the redirect URI is `https://…` (or loopback in local dev), which the registration rules already accept. The HTML is inlined into `dist/` at build time and never cached (`cache-control: no-store`, `noindex`); when `inspector` is unset or `false` the route is not the server's and falls through to your app. Do not leave it enabled in production: it is a public page that lets anyone start an OAuth flow against your server.
+
+For a standalone copy that runs on `http://127.0.0.1:8787` against remote servers, see [examples/inspector](./examples/inspector). Note that this cross-origin mode requires the target server to allow CORS from loopback origins, which this package does not do by default.
 
 ## What the server does not do
 
@@ -276,3 +300,31 @@ See [CONTRIBUTING.md](./CONTRIBUTING.md) and [docs/publishing.md](./docs/publish
 ## License
 
 [MIT](./LICENSE)
+
+## Account and connection diagnostics
+
+Add `connectionInfo: {}` to `createMcpAppServer` to enable the read-only `get_connection_info` tool. It returns the verified owner ID, OAuth client and grant IDs, granted scopes, configured MCP endpoint, transport, and server name/version in both text and `structuredContent`. It accepts no account selector. Existing hosts are unchanged unless they opt in. Use `resolve` to add current application profile and data-environment information:
+
+```ts
+connectionInfo: {
+  // toolName: 'myapp_get_connection_info', // optional
+  resolve: async ({ ownerId }) => {
+    const user = await users.findById(ownerId);
+    return {
+      user: user ? {
+        displayName: user.displayName,
+        email: user.email,
+        identities: [{ provider: 'firebase', subject: user.firebaseUid, issuer: firebaseProjectId }],
+      } : null,
+      environment: 'production',
+      dataSource: 'primary-db',
+    };
+  },
+},
+```
+
+`users`, `firebaseProjectId`, and the database label above are host-owned examples. Omit identity entries if no external identity is linked. The resolver receives verified context without the raw request or credentials, runs on every call, and must look up `ownerId` in the same data store used by business tools. Do not call the consent-page `identity.resolve` with the agent token or substitute the browser's current user. Return `user: null` for a deleted user; without a resolver the user status is `unknown`. A resolver failure is a tool error, not a successful fallback.
+
+Only declared public fields are serialized. Never put secrets, database connection strings, or tokens in profile or environment fields. Anonymous discovery exposes only the tool schema and does not invoke the resolver. Calls require a valid, unrevoked authorization. Custom names must be unique. The tool participates in the normal audit hook.
+
+Compare endpoint + environment/dataSource + owner ID (and external identity issuer/subject) with the website when investigating mismatches. Numeric user IDs from different databases are not comparable on their own. Switching the website account does not switch an existing MCP grant; reconnect with the intended account. This is connection diagnostics, not a data-sync health check. This package's built-in tool describes its HTTP transport; separate legacy stdio servers need their own adapter.

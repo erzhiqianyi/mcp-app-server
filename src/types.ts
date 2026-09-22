@@ -124,6 +124,46 @@ export interface AuthenticatedGrant {
   audience: string;
 }
 
+/** Public diagnostics supplied by the host, looked up using the verified owner id. */
+export interface ConnectionDetails {
+  /** null means this grant's user no longer exists. Do not substitute the browser's user. */
+  user: {
+    displayName?: string;
+    email?: string;
+    identities?: { provider: string; subject: string; issuer?: string }[];
+  } | null;
+  environment?: string;
+  /** Stable, non-secret identifier for the actual data store; never a connection string. */
+  dataSource?: string;
+}
+
+export interface ConnectionInfoOptions {
+  /** Default get_connection_info. Override to fit your tool naming convention. */
+  toolName?: string;
+  /** Called per authenticated request; do not cache across users or environments. */
+  resolve?: (context: Readonly<Omit<ToolContext, 'request'>>) => Promise<ConnectionDetails>;
+}
+
+export interface ConnectionInfo {
+  user: {
+    id: string;
+    /** unknown when the host has not supplied a resolver. */
+    status: 'active' | 'missing' | 'unknown';
+    displayName?: string;
+    email?: string;
+    identities?: { provider: string; subject: string; issuer?: string }[];
+  };
+  connection: {
+    transport: 'streamable-http';
+    endpoint: string;
+    clientId: string;
+    clientName: string;
+    grantId: string;
+    scopes: string[];
+  };
+  server: { name: string; version: string; environment?: string; dataSource?: string };
+}
+
 export interface McpAppServerConfig {
   /** MCP server name; also used in server.json. */
   name: string;
@@ -141,6 +181,8 @@ export interface McpAppServerConfig {
   scopes?: Record<string, ScopeDefinition>;
   identity: IdentityProvider;
   tools: readonly AgentTool[];
+  /** Opt in to an authenticated, read-only connection diagnostic tool. Default disabled. */
+  connectionInfo?: ConnectionInfoOptions;
   /** Static resources (for example MCP Apps `ui://` HTML). Default: none, and `resources/list` is not advertised. */
   resources?: readonly AgentResource[];
   /**
@@ -167,6 +209,12 @@ export interface McpAppServerConfig {
   anonymousDiscovery?: boolean;
   /** Optional free-text contract (markdown) published with the schema and via a `*_get_contract`-style tool if the host wants one. */
   contract?: string;
+  /**
+   * Serve the development inspector at `GET <basePath>/mcp/inspector`: a browser page that runs the
+   * OAuth flow against this server, lists tools/resources and calls them. Same-origin, so no CORS is
+   * needed. Default false — enable it only outside production (e.g. `inspector: env.DEV === 'true'`).
+   */
+  inspector?: boolean;
 }
 
 export class AppServerError extends Error {

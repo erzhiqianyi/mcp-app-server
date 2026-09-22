@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": { "noEmit": false },
-  "exclude": ["tests", "examples", "dist"]
+  "exclude": ["tests", "examples", "dist", "src/inspector/page.ts"]
 }

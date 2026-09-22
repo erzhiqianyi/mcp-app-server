@@ -22,7 +22,11 @@ export default {
         const match = /session=([a-z0-9]+)/.exec(req.headers.get('cookie') || '');
         return match ? { id: 'user-' + match[1] } : null;
       }),
+      connectionInfo: {
+        resolve: async ({ ownerId }) => ({ user: { displayName: ownerId }, environment: 'test', dataSource: 'notes-d1' }),
+      },
       storage: sqlStore(db),
+      inspector: true,
       origins: { publicOrigin: 'http://notes.local', webOrigin: 'http://notes.local' },
       tools: [
         {

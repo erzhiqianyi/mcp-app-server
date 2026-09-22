@@ -36,8 +36,15 @@ void test('worker: discovery, cookie-session consent, scoped tools and tenant is
   assert.equal(meta.registration_endpoint, origin + '/api/notes/oauth/register');
   assert.deepEqual(meta.scopes_supported, ['notes:read', 'notes:write']);
   const schema = await json(await mf.dispatchFetch(origin + '/api/notes/mcp/schema'));
-  assert.deepEqual(schema.tools.map((tool) => tool.name), ['notes_list', 'notes_summarize']);
-  assert.equal((await json(await rpc(mf, { jsonrpc: '2.0', id: 1, method: 'tools/list' }))).result.tools.length, 2);
+  assert.deepEqual(schema.tools.map((tool) => tool.name), ['notes_list', 'notes_summarize', 'get_connection_info']);
+  assert.equal((await json(await rpc(mf, { jsonrpc: '2.0', id: 1, method: 'tools/list' }))).result.tools.length, 3);
+
+  // Hosted inspector: same-origin HTML with the MCP path injected, never cached or indexed.
+  const inspector = await mf.dispatchFetch(origin + '/api/notes/mcp/inspector');
+  assert.equal(inspector.status, 200);
+  assert.match(inspector.headers.get('content-type'), /^text\/html/);
+  assert.equal(inspector.headers.get('cache-control'), 'no-store');
+  assert.match(await inspector.text(), /window\.__MCP_INSPECTOR__ = \{"mcpPath":"\/api\/notes\/mcp"\}/);
 
   await post(mf, '/seed', { owner: 'user-alice', id: 'n1', text: 'alice note' });
   await post(mf, '/seed', { owner: 'user-bob', id: 'n2', text: 'bob note' });
@@ -62,7 +69,12 @@ void test('worker: discovery, cookie-session consent, scoped tools and tenant is
   const bob = await grant(mf, 'session=bob', ['notes:read']);
   assert.equal(bob.scope, 'notes:read');
   const bobTools = (await json(await rpc(mf, { jsonrpc: '2.0', id: 5, method: 'tools/list' }, bob.access_token))).result.tools.map((tool) => tool.name);
-  assert.deepEqual(bobTools, ['notes_list']);
+  assert.deepEqual(bobTools, ['notes_list', 'get_connection_info']);
+  for (const [owner, token] of [['user-alice', alice.access_token], ['user-bob', bob.access_token]]) {
+    const diagnostic = await json(await rpc(mf, { jsonrpc: '2.0', id: 8, method: 'tools/call', params: { name: 'get_connection_info', arguments: {} } }, token));
+    assert.equal(diagnostic.result.structuredContent.user.id, owner);
+    assert.equal(diagnostic.result.structuredContent.server.dataSource, 'notes-d1');
+  }
 
   // Refresh rotates; the previous access token is dead afterwards.
   const rotated = await json(await post(mf, '/api/notes/oauth/token', { grant_type: 'refresh_token', refresh_token: alice.refresh_token, client_id: alice.client_id }));

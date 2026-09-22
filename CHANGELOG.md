@@ -4,6 +4,13 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-22
+
+### Added
+- Opt-in `inspector: true` serves a development inspector page at `GET <basePath>/mcp/inspector`: same-origin OAuth PKCE flow, `tools/list` / `resources/list`, tool calls and resource reads from the browser. The page is bundled into `dist/` at build time (`npm run build:inspector`); `examples/inspector` builds the same source as a standalone page. The page sends the `resource` indicator announced by `/.well-known/oauth-protected-resource`, so it also works when it is reached through a dev proxy or tunnel whose origin differs from `publicOrigin`, and OAuth errors returned to the callback are shown instead of ignored.
+- Opt-in `connectionInfo` configuration registers an authenticated, read-only `get_connection_info` tool, with live host profile/environment lookup, verified grant context, explicit user status, and allowlisted structured output.
+- Multi-account, browser-switch, anonymous access, revoked grant, deleted user, and resolver-failure coverage.
+
 ## [0.2.0] - 2026-09-21
 
 ### Added
@@ -28,6 +35,7 @@ Initial release. Extracted from the Career Note monorepo (where it was briefly n
 - `@ninomae/mcp-app-server/react`: headless `useAgentConsent` hook.
 - Tests: Miniflare + D1 end-to-end, replay/revocation rules on `memoryStore`, `sqlStore` on plain Node `node:sqlite`.
 
-[Unreleased]: https://github.com/erzhiqianyi/mcp-app-server/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/erzhiqianyi/mcp-app-server/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/erzhiqianyi/mcp-app-server/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/erzhiqianyi/mcp-app-server/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/erzhiqianyi/mcp-app-server/releases/tag/v0.1.0

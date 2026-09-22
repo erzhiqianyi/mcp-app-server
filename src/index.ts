@@ -6,6 +6,8 @@ import { AppServerError } from './types.js';
 import { createTokenStore } from './tokens.js';
 import * as oauth from './oauth.js';
 import { describeServer, isDiscoveryRequest, registryEntry, serveMcp } from './mcp.js';
+import { connectionInfoTool } from './connection-info.js';
+import { inspectorResponse } from './inspector.js';
 import { memoryRateLimiter } from './rate-limit.js';
 
 export * from './types.js';
@@ -31,7 +33,7 @@ export interface McpAppServer {
   /** `server.json` for the official MCP registry. */
   serverJson(request: Request, namespace: string, description: string): ReturnType<typeof registryEntry>;
   origins(request: Request): Origins;
-  paths: { mcp: string; schema: string; oauth: string; consent: string };
+  paths: { mcp: string; schema: string; inspector: string; oauth: string; consent: string };
 }
 
 function days(value: number | undefined, fallback: number) {
@@ -40,7 +42,7 @@ function days(value: number | undefined, fallback: number) {
 
 export function createMcpAppServer(config: McpAppServerConfig): McpAppServer {
   const basePath = config.basePath.replace(/\/+$/, '');
-  const paths = { mcp: basePath + '/mcp', schema: basePath + '/mcp/schema', oauth: basePath + '/oauth', consent: config.consentPath || '/oauth/authorize' };
+  const paths = { mcp: basePath + '/mcp', schema: basePath + '/mcp/schema', inspector: basePath + '/mcp/inspector', oauth: basePath + '/oauth', consent: config.consentPath || '/oauth/authorize' };
   const tokenPrefix = config.tokenPrefix || 'agt_';
   // No catalogue → one implicit scope so OAuth clients still have something to request and consent to.
   const scopes = config.scopes && Object.keys(config.scopes).length ? config.scopes : { [config.name]: { description: `Act on your behalf in ${config.name}`, required: true } };
@@ -49,6 +51,13 @@ export function createMcpAppServer(config: McpAppServerConfig): McpAppServer {
   const tokens = createTokenStore(config.storage, tokenPrefix, days(config.accessTokenDays, 30), scopeNames);
   const registrationLimit = config.registrationLimit === false ? null : config.registrationLimit || { limiter: memoryRateLimiter() };
   const origins = (request: Request) => (typeof config.origins === 'function' ? config.origins(request) : config.origins);
+  const diagnostic = config.connectionInfo
+    ? connectionInfoTool(config.connectionInfo, { name: config.name, version, endpoint: (request) => origins(request).publicOrigin + paths.mcp })
+    : null;
+  if (diagnostic && config.tools.some((tool) => tool.name === diagnostic.name)) {
+    throw new Error(`Duplicate connection info tool name: ${diagnostic.name}`);
+  }
+  const catalogue = diagnostic ? [...config.tools, diagnostic] : config.tools;
   const runtime = (request: Request): oauth.OauthRuntime => ({
     store: config.storage,
     origins: origins(request),
@@ -96,7 +105,7 @@ export function createMcpAppServer(config: McpAppServerConfig): McpAppServer {
     const method = request.method.toUpperCase();
     const anonymous = !request.headers.has('authorization');
     if (anonymous && method === 'POST' && config.anonymousDiscovery !== false && (await isDiscoveryRequest(request))) {
-      return serveMcp({ name: config.name, version, tools: config.tools, resources: config.resources, request, ctx: null });
+      return serveMcp({ name: config.name, version, tools: catalogue, resources: config.resources, request, ctx: null });
     }
     let grant: AuthenticatedGrant | null;
     try {
@@ -107,7 +116,7 @@ export function createMcpAppServer(config: McpAppServerConfig): McpAppServer {
     }
     if (!grant) return oauth.challengeResponse(rt, 'invalid_token', 'Authorize this agent with OAuth first');
     const ctx: ToolContext = { ownerId: grant.ownerId, scopes: grant.scopes, grantId: grant.grantId, clientId: grant.clientId, clientName: grant.clientName, request };
-    const tools = config.tools.map((tool) => ({
+    const tools = catalogue.map((tool) => ({
       ...tool,
       handler: async (args: Record<string, unknown>, c: ToolContext) => {
         const result = await tool.handler(args, c);
@@ -126,7 +135,7 @@ export function createMcpAppServer(config: McpAppServerConfig): McpAppServer {
     async ensureSchema() {
       await config.storage.ensureSchema?.();
     },
-    describe: (request) => describeServer({ name: config.name, version, origins: origins(request), mcpPath: paths.mcp, scopes: scopeNames, tools: config.tools, resources: config.resources, contract: config.contract }),
+    describe: (request) => describeServer({ name: config.name, version, origins: origins(request), mcpPath: paths.mcp, scopes: scopeNames, tools: catalogue, resources: config.resources, contract: config.contract }),
     serverJson: (request, namespace, description) => registryEntry({ namespace, name: config.name, version, description, origins: origins(request), mcpPath: paths.mcp }),
     listGrants: (ownerId) => tokens.list(ownerId),
     async revokeGrant(ownerId, grantId) {
@@ -142,6 +151,7 @@ export function createMcpAppServer(config: McpAppServerConfig): McpAppServer {
       if (pathname === paths.schema && method === 'GET') {
         return new Response(JSON.stringify(this.describe(request)), { headers: { 'content-type': 'application/json; charset=utf-8', 'access-control-allow-origin': '*', 'cache-control': 'public, max-age=300' } });
       }
+      if (config.inspector && pathname === paths.inspector && method === 'GET') return inspectorResponse(paths.mcp);
       if (pathname.startsWith(paths.oauth + '/')) return handleOauth(rt, request, pathname);
       if (pathname === paths.mcp) return handleMcp(rt, request);
       return null;

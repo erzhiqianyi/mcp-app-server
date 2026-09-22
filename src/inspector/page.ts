@@ -2,9 +2,14 @@ type Json = Record<string, unknown>;
 type Tool = { name: string; title?: string; description?: string; inputSchema?: Json; annotations?: Json; _meta?: Json };
 type Resource = { uri: string; name: string; title?: string; description?: string; mimeType?: string; _meta?: Json };
 
+// When the server hosts this page (`inspector: true`), it injects its own MCP path so the
+// endpoint is pre-filled and same-origin; standalone builds fall back to the last typed value.
+declare global { interface Window { __MCP_INSPECTOR__?: { mcpPath?: string } } }
+const hosted = window.__MCP_INSPECTOR__?.mcpPath ? location.origin + window.__MCP_INSPECTOR__.mcpPath : '';
+
 const root = document.querySelector<HTMLDivElement>('#app')!;
 const state = {
-  serverUrl: localStorage.getItem('mcp-inspector-server') || '',
+  serverUrl: hosted || localStorage.getItem('mcp-inspector-server') || '',
   clientName: 'MCP Inspector',
   redirectUri: `${location.origin}${location.pathname}`,
   token: sessionStorage.getItem('mcp-inspector-token') || '',
@@ -36,16 +41,17 @@ async function request(path: string, init: RequestInit = {}) {
   headers.set('accept', 'application/json, text/event-stream');
   if (state.token) headers.set('authorization', `Bearer ${state.token}`);
   const response = await fetch(endpoint() + path, { ...init, headers });
-  const data = await response.json() as Json;
+  const text = await response.text();
+  const data = (text ? JSON.parse(text) : {}) as Json;
   if (!response.ok) throw new Error(String(data.error_description || data.error || response.statusText));
   return data;
 }
 
-async function rpc(method: string, params: Json = {}) {
+async function rpc(method: string, params: Json = {}, notification = false) {
   return request('', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: crypto.randomUUID(), method, params }),
+    body: JSON.stringify({ jsonrpc: '2.0', ...(notification ? {} : { id: crypto.randomUUID() }), method, params }),
   });
 }
 
@@ -69,6 +75,9 @@ async function authorize() {
   if (!registered.ok) throw new Error(String(client.error_description || client.error));
   sessionStorage.setItem('mcp-inspector-oauth', JSON.stringify({ verifier, state: stateValue, clientId: client.client_id }));
   const meta = await fetch(wellKnownUrl('/.well-known/oauth-authorization-server')).then((r) => r.json()) as Json;
+  // The resource indicator must match the server's canonical MCP URL (RFC 9728), which can differ
+  // from the address this page reaches it through (dev proxy, tunnel, custom publicOrigin).
+  const protectedResource = await fetch(wellKnownUrl('/.well-known/oauth-protected-resource')).then((r) => (r.ok ? r.json() : {})).catch(() => ({})) as Json;
   const url = new URL(String(meta.authorization_endpoint));
   url.search = new URLSearchParams({
     response_type: 'code',
@@ -77,7 +86,7 @@ async function authorize() {
     code_challenge: await challenge(verifier),
     code_challenge_method: 'S256',
     state: stateValue,
-    resource: endpoint(),
+    resource: String(protectedResource.resource || endpoint()),
   }).toString();
   location.href = url.toString();
 }
@@ -85,6 +94,10 @@ async function authorize() {
 async function finishAuthorization() {
   const params = new URLSearchParams(location.search);
   const code = params.get('code');
+  if (params.has('error')) {
+    history.replaceState({}, '', location.pathname);
+    throw new Error(`Authorization failed: ${params.get('error_description') || params.get('error')}`);
+  }
   if (!code) return;
   const saved = JSON.parse(sessionStorage.getItem('mcp-inspector-oauth') || 'null') as { verifier: string; state: string; clientId: string } | null;
   if (!saved || saved.state !== params.get('state')) throw new Error('OAuth state validation failed.');
@@ -102,7 +115,7 @@ async function finishAuthorization() {
 
 async function loadSurface() {
   const initialized = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: state.clientName, version: '0.1.0' } });
-  await fetch(endpoint(), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} }) });
+  await rpc('notifications/initialized', {}, true);
   const tools = await rpc('tools/list');
   const resources = await rpc('resources/list').catch(() => ({ result: { resources: [] } }));
   state.tools = ((tools.result as Json)?.tools || []) as Tool[];
@@ -140,10 +153,12 @@ function render() {
   root.querySelector('#authorize')!.addEventListener('click', () => void authorize().catch((error) => setStatus(error.message)));
   root.querySelector('#inspect')!.addEventListener('click', () => void loadSurface().catch((error) => setStatus(error.message)));
   root.querySelector('#clear')!.addEventListener('click', () => { state.token = ''; sessionStorage.removeItem('mcp-inspector-token'); render(); });
-  root.querySelectorAll<HTMLFormElement>('form[data-tool]').forEach((form) => form.onsubmit = (event) => { event.preventDefault(); void callTool(form.dataset.tool!, form, form.nextElementSibling!); });
+  root.querySelectorAll<HTMLFormElement>('form[data-tool]').forEach((form) => form.onsubmit = (event) => { event.preventDefault(); void callTool(form.dataset.tool!, form, form.nextElementSibling as HTMLElement); });
   root.querySelectorAll<HTMLButtonElement>('button[data-resource]').forEach((button) => button.onclick = async () => {
     try { const result = await rpc('resources/read', { uri: button.dataset.resource }); root.querySelector(`[data-resource-output="${CSS.escape(button.dataset.resource!)}"]`)!.textContent = JSON.stringify(result.result ?? result, null, 2); } catch (error) { setStatus(error instanceof Error ? error.message : String(error)); }
   });
 }
 
 void finishAuthorization().then(() => render()).catch((error) => { state.status = error.message; render(); });
+
+export {};

@@ -1,7 +1,7 @@
 import { build } from 'esbuild';
 
 await build({
-  entryPoints: ['src/main.ts'],
+  entryPoints: ['../../src/inspector/page.ts'],
   bundle: true,
   format: 'iife',
   target: 'es2022',
@@ -26,5 +26,5 @@ const html = `<!doctype html>
 await import('node:fs/promises').then(async (fs) => {
   await fs.mkdir('dist', { recursive: true });
   await fs.writeFile('dist/index.html', html);
-  await fs.copyFile('src/style.css', 'dist/style.css');
+  await fs.copyFile('../../src/inspector/page.css', 'dist/style.css');
 });

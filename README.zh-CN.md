@@ -156,6 +156,28 @@ mcp.revokeGrant(ownerId, grantId)   // 撤销并切断整条 refresh 链
 
 各类客户端（Claude Code、Claude.ai、ChatGPT、Cursor、自写脚本）的具体接入步骤见 [docs/integration.md](./docs/integration.md)。
 
+### 用内置 inspector 测试
+
+包里自带一个浏览器调试页，不装任何 MCP 客户端就能把整条链路走一遍：它自己注册为 OAuth 客户端，经你的同意页完成 PKCE 授权，列出该授权能看到的工具和资源，用 JSON 参数调用工具、读取资源，并原样展示 `content`、`structuredContent` 和错误。
+
+在非生产环境打开开关，然后访问和服务器同源的 `<base>/mcp/inspector`：
+
+```ts
+const mcp = createMcpAppServer({
+  // ...
+  inspector: env.NODE_ENV !== 'production',
+});
+// → GET https://notes.example.com/api/notes/mcp/inspector
+```
+
+1. 端点输入框已预填为本服务器的 `<base>/mcp`。点 **Authorize**：页面注册一个 public client（redirect URI 就是它自己的地址），然后跳到你的同意页。
+2. 像平时一样登录、同意，回到 inspector，token 存在 `sessionStorage`。
+3. **Inspect server** 依次执行 `initialize` → `tools/list` → `resources/list`，每个工具一张卡片；填 JSON 参数点 **Call tool**，资源卡片点 **Read resource** 执行 `resources/read`。
+
+页面由你的 origin 直接提供，因此不需要任何 CORS 头；redirect URI 是 `https://…`（本地开发则是 loopback），注册规则本来就接受。HTML 在构建时内联进 `dist/`，响应带 `cache-control: no-store` 和 `noindex`；`inspector` 未设置或为 `false` 时该路径不属于服务器，会落到你的 app。不要在生产环境打开：它是公开页面，任何人都能借它对你的服务器发起 OAuth 流程。
+
+如需一个跑在 `http://127.0.0.1:8787`、对远程服务器调试的独立版本，见 [examples/inspector](./examples/inspector)。注意这种跨域模式要求目标服务器对 loopback 来源放开 CORS，本包默认不放开。
+
 ## 端点一览
 
 | 路径 | 认证 | 作用 |
@@ -170,6 +192,7 @@ mcp.revokeGrant(ownerId, grantId)   // 撤销并切断整条 refresh 链
 | `GET <base>/oauth/client` | 无 | 同意页读取客户端与 scope 说明 |
 | `POST <base>/oauth/approve` | **宿主身份** | 用户同意/拒绝 → 授权码 |
 | `POST <base>/oauth/token` | 客户端 | 授权码换 token、refresh 轮换 |
+| `GET <base>/mcp/inspector` | 无（仅 `inspector: true` 时存在） | 开发用浏览器调试页 |
 
 ## 本包不做什么
 
@@ -202,3 +225,31 @@ npm run build     # 产出 dist/（ESM + .d.ts）
 ## 许可
 
 [MIT](./LICENSE)
+
+## 当前账户与连接诊断
+
+在 `createMcpAppServer` 配置中添加 `connectionInfo: {}`，即可启用只读工具 `get_connection_info`。默认关闭，不影响现有工具列表。返回授权用户 ID、OAuth 客户端及授权 ID、权限、服务地址、HTTP 传输方式和服务版本；同时提供文本和 `structuredContent`。工具不接受用户 ID 参数。业务服务通过回调提供用户资料和数据环境：
+
+```ts
+connectionInfo: {
+  // toolName: 'myapp_get_connection_info', // optional
+  resolve: async ({ ownerId }) => {
+    const user = await users.findById(ownerId);
+    return {
+      user: user ? {
+        displayName: user.displayName,
+        email: user.email,
+        identities: [{ provider: 'firebase', subject: user.firebaseUid, issuer: firebaseProjectId }],
+      } : null,
+      environment: 'production',
+      dataSource: 'primary-db',
+    };
+  },
+},
+```
+
+示例中的 `users`、`firebaseProjectId` 和数据源名称由接入服务提供；未绑定外部身份时省略 `identities`。回调每次调用都会执行，只收到验证后的身份上下文，不包含原始请求和凭证。必须按 `ownerId` 从业务工具使用的同一数据源查询，不能改用浏览器当前账户，也不能拿 Agent token 调用同意页面的 `identity.resolve`。用户不存在时返回 `user: null`；未配置回调时状态为 `unknown`；查询失败时工具报错。
+
+输出只包含声明的公开字段，但服务仍须确保字段值不含 token、密钥或数据库连接串。匿名发现只显示工具定义，不读取用户资料；调用要求有效且未撤销的授权。可以自定义工具名，但不能与已有工具重名。调用进入现有审计钩子。
+
+排查时同时比较网页与 MCP 的服务地址、环境/数据源、用户 ID，以及外部身份的 issuer/subject。不同数据库中相同的数字用户 ID 不代表同一账户。网页切换账户不会自动切换 MCP 授权，需要用目标账户重新连接。这项能力用于连接诊断，不证明数据同步成功。内置工具描述本包的 HTTP 连接；独立 stdio 服务需要自己的适配。
