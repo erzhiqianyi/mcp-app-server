@@ -1,6 +1,6 @@
 {
   "name": "@ninomae/mcp-app-server",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Turn your existing app into an OAuth 2.1-protected MCP server. Bring your own identity, tools and storage; users connect Claude, ChatGPT, Cursor or any MCP client to their own data.",
   "keywords": [
     "mcp",
